@@ -223,6 +223,7 @@ export default function Home(){
   setDraft({ ...draft, venueIds });
  };
  const rows=useMemo(()=>[...VENUES].sort((a,b)=>(state?.summary[b.id]?.likes||0)-(state?.summary[a.id]?.likes||0)||a.name.localeCompare(b.name)),[state]);
+ const visibleRows = showAll ? rows : rows.filter(venue => (state?.summary[venue.id]?.likes ?? 0) > 0).slice(0, 10);
  const voted=Object.entries(state?.mine||{}).length;const liked=Object.values(state?.mine||{}).filter(Boolean).length;
  const trail=(state?.trail?.venue_ids||[]).map(id=>VENUES.find(v=>v.id===id)).filter(Boolean) as Venue[];
  const share=async()=>{const link=typeof window!=='undefined'?window.location.origin+'/?invite='+encodeURIComponent(invite):'';try{if(navigator.share)await navigator.share({title:'Belfast Cocktail Club',text:'🍸 Vote for our Belfast Cocktail Week bars!',url:link});else{await navigator.clipboard.writeText(link);setNotice('Group invitation link copied')}}catch{setNotice('Sharing cancelled')}};
@@ -245,13 +246,14 @@ export default function Home(){
    <div><strong>{voted}</strong><span>Your ratings</span></div>
    <div><strong>{liked}</strong><span>Your favourites</span></div>
   </div>
-  <p className="hint">Vote on any venue below. Group results refresh every 8 seconds.</p>
+  <p className="hint">Ranked by the group’s Interested votes. Results refresh every 8 seconds.</p>
   <button className="secondary" aria-expanded={showAll} aria-controls="venue-rankings" onClick={() => setShowAll(!showAll)}>
    {showAll ? 'Show top 10' : 'Browse and vote on all 36 venues'} <ChevronDown size={17} />
   </button>
   <button className="secondary" disabled={busy || voted === 0} onClick={resetVotes}>Reset my votes</button>
   <div className="rankings" id="venue-rankings">
-   {rows.slice(0, showAll ? VENUES.length : 10).map((venue, i) => (
+   {visibleRows.length === 0 && <p className="hint">No venues have an Interested vote yet. Browse all 36 venues to cast a vote.</p>}
+   {visibleRows.map((venue, i) => (
     <div key={venue.id} className="rank">
      <div className="rank-top">
       <span className="rank-num">{String(i + 1).padStart(2, '0')}</span>
