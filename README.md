@@ -28,8 +28,8 @@ A mobile-first, deployable **Next.js + Supabase** app for a **14-member WhatsApp
 - The leaderboard counts **positive votes**, not unique members who have completed all ten choices. Guests may vote on any of the 36 only in future expanded UI; this MVP quickly votes on ten featured venues.
 - The AI receives only allowed venue IDs, known area/address, and aggregated preferences/vote totals. The response is validated against the provided candidates. If the API fails or is unset, the app still generates a simple top-voted shortlist.
 - Route order is **not** optimised against a walking-distance API. Google Maps calculates directions when opened. Do not promise a walk time or capacity based on this app.
-- Exact signature drink names and prices are not universally available here: missing fields are identified as unverified rather than fabricated. Group capacity and opening times have not been checked.
-- Venue names sourced from https://cocktailweekbelfast.co.uk/ (official November 2026 list); known venue addresses and attributes were cross-checked against Aircoach's Belfast Cocktail Week event guide. Selected cocktail names were reported by the event's Fatsoma listing.
+- Signature cocktail names come from pages 10–18 of the [official November 2026 event guide](https://tinyurl.com/BelfastCW2026NOV). Check the guide for prices and wristband offers. Group capacity and opening times have not been checked.
+- Venue names sourced from https://cocktailweekbelfast.co.uk/ (official November 2026 list); known venue addresses and attributes were cross-checked against Aircoach's Belfast Cocktail Week event guide.
 - Only use for adults of legal drinking age. Consider a moderation-friendly/non-alcoholic option if expanding.
 
 ## Testing
