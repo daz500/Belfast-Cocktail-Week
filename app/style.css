@@ -40,13 +40,29 @@
   background: #382a41;
   color: #fff;
 }
-.cocktail-dialog iframe {
+.cocktail-photo {
   display: block;
   width: 100%;
-  height: min(62dvh, 660px);
-  border: 0;
+  max-height: min(52dvh, 520px);
+  object-fit: contain;
   border-radius: 8px;
   background: #100b17;
+}
+.cocktail-ingredients-title { margin: 16px 0 8px; }
+.cocktail-ingredients {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.cocktail-ingredients li {
+  padding: 5px 9px;
+  border-radius: 8px;
+  background: #382a41;
+  color: #e4d2e2;
+  font-size: 13px;
 }
 .cocktail-dialog a {
   display: inline-block;

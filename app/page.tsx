@@ -10,8 +10,7 @@ async function api(url:string,token:string,body?:unknown,method=body===undefined
 
 function CocktailPhotoDialog({ venue, onClose }: { venue: Venue; onClose: () => void }) {
  const dialog = useRef<HTMLDialogElement>(null);
- const page = venue.cocktailGuidePage;
- const guide = 'https://www.canva.com/design/DAHX5ms8syU/uBe9nWU5tvZwnTIjh-2PhA/view';
+ const ingredients = venue.cocktailIngredients;
 
  useEffect(() => {
   if (dialog.current && !dialog.current.open) dialog.current.showModal();
@@ -28,11 +27,14 @@ function CocktailPhotoDialog({ venue, onClose }: { venue: Venue; onClose: () => 
      <button className="cocktail-close" aria-label="Close photo"><X size={20} /></button>
     </form>
    </div>
-   {page ? <>
-    <p>Look for this drink’s photo beside its listing on page {page}.</p>
-    <iframe src={`${guide}?embed#${page}`} title={`Official guide photo for ${venue.cocktail}`} referrerPolicy="no-referrer" />
-    <a href={`${guide}#${page}`} target="_blank" rel="noreferrer">Open the guide in a new tab</a>
-   </> : <p>Photo unavailable.</p>}
+   {venue.cocktailPhoto && ingredients?.length ? <>
+    <img className="cocktail-photo" src={venue.cocktailPhoto} alt={`${venue.cocktail} at ${venue.name}`} />
+    <h3 className="cocktail-ingredients-title">Ingredients</h3>
+    <ul className="cocktail-ingredients">
+     {ingredients.map(ingredient => <li key={ingredient}>{ingredient}</li>)}
+    </ul>
+    <a href={COCKTAIL_GUIDE_URL} target="_blank" rel="noreferrer">Photo and ingredients from the official event guide</a>
+   </> : <p>Cocktail details unavailable.</p>}
   </dialog>
  );
 }
