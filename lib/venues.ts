@@ -71,17 +71,14 @@ export const VENUES: Venue[] = names.map(name => {
     cocktailPhoto: `/cocktails/${id}.${format}`,
   };
 });
-// Closest ten by maximum straight-line separation, using event guide addresses.
-export const FEATURED = [
-  'the-watson',
-  'the-maverick',
-  'crimson-cocktail-lounge',
-  'the-courtyard-at-haymarket',
-  'the-lounge-at-haymarket',
-  'the-stock-exchange',
-  'the-deer-s-head',
-  'the-foundry',
-  '39-gordon-street',
-  'common-market',
-];
+export const QUICK_PICK_COUNT = 10;
+
+export function drawQuickPicks() {
+  const pool = [...VENUES];
+  for (let i = 0; i < QUICK_PICK_COUNT; i++) {
+    const j = i + Math.floor(Math.random() * (pool.length - i));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, QUICK_PICK_COUNT);
+}
 export const mapSearch=(v:Venue)=>`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(v.address||`${v.name}, Belfast`)}`;

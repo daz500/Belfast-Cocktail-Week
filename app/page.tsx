@@ -1,15 +1,36 @@
 'use client';
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import {ArrowLeft,ArrowRight,Check,ChevronDown,Clipboard,Heart,MapPin,Martini,RefreshCw,Share2,Sparkles,Trophy,Users,X} from 'lucide-react';
-import {COCKTAIL_GUIDE_URL,VENUES,FEATURED,mapSearch,Venue} from '../lib/venues';
+import {COCKTAIL_GUIDE_URL,QUICK_PICK_COUNT,VENUES,drawQuickPicks,mapSearch,Venue} from '../lib/venues';
 type Summary=Record<string,{likes:number;dislikes:number}>;
 type PublishedTrail={venue_ids:string[];explanation:string;generated_by_ai:boolean;created_at:string};
 type TrailDraft={venueIds:string[];explanation?:string};
 type GroupState={me:{id:string;name:string};joined:number;summary:Summary;mine:Record<string,boolean>;trail:PublishedTrail|null};
-const featured=FEATURED.map(id=>VENUES.find(v=>v.id===id)!).filter(Boolean);
+const quickPicksKey = 'bcc-quick-picks';
 const all=(v:Venue)=>v.address?v.address:v.area||'Belfast';
 const venuesByName=[...VENUES].sort((a,b)=>a.name.localeCompare(b.name));
 async function api(url:string,token:string,body?:unknown,method=body===undefined?'GET':'POST'){const r=await fetch(url,{method,headers:{'Content-Type':'application/json','x-member-token':token},body:body===undefined?undefined:JSON.stringify(body),cache:'no-store'});const data=await r.json();if(!r.ok)throw new Error(data.error||'Something went wrong');return data}
+
+function browserQuickPicks(fresh = false) {
+ if (!fresh) {
+  try {
+   const ids: unknown = JSON.parse(localStorage.getItem(quickPicksKey) ?? 'null');
+   if (Array.isArray(ids) && ids.length === QUICK_PICK_COUNT && new Set(ids).size === QUICK_PICK_COUNT) {
+    const saved = ids.map(id => VENUES.find(venue => venue.id === id));
+    if (saved.every((venue): venue is Venue => venue !== undefined)) return saved;
+   }
+  } catch {
+   // A missing or invalid stored draw can be replaced.
+  }
+ }
+ const picks = drawQuickPicks();
+ try {
+  localStorage.setItem(quickPicksKey, JSON.stringify(picks.map(venue => venue.id)));
+ } catch {
+  // The draw is still usable for this visit.
+ }
+ return picks;
+}
 
 function walkingLinks(stops: Venue[]) {
  if (stops.length === 1) return [{ href: mapSearch(stops[0]), label: 'Open venue map' }];
@@ -63,6 +84,8 @@ export default function Home(){
  const [token,setToken]=useState('');const [invite,setInvite]=useState('');const [name,setName]=useState('');const [style,setStyle]=useState('mixed');const [food,setFood]=useState(false);
  const [state,setState]=useState<GroupState|null>(null);const [screen,setScreen]=useState<'welcome'|'vote'|'results'|'trail'>('welcome');const [index,setIndex]=useState(0);const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [notice,setNotice]=useState('');const [showAll,setShowAll]=useState(false);const [admin,setAdmin]=useState('');
  const stateRevision = useRef(0);
+ const [featured, setFeatured] = useState<Venue[]>([]);
+ const currentPick = featured[index];
  const [draft, setDraft] = useState<TrailDraft | null>(null);
  const [selectedCocktail, setSelectedCocktail] = useState<Venue | null>(null);
  const cocktailButton = (venue: Venue) => venue.cocktail ? (
@@ -70,7 +93,13 @@ export default function Home(){
    {venue.cocktail}
   </button>
  ) : 'Cocktail details unavailable';
- useEffect(()=>{const params=new URLSearchParams(window.location.search);setInvite(params.get('invite')||'');setToken(localStorage.getItem('bcc-member-token')||'')},[]);
+ useEffect(() => {
+  const params = new URLSearchParams(window.location.search);
+  const savedToken = localStorage.getItem('bcc-member-token') || '';
+  setInvite(params.get('invite') || '');
+  if (savedToken) setFeatured(browserQuickPicks());
+  setToken(savedToken);
+ }, []);
  const refresh = useCallback(async (t: string, quiet = false) => {
   if (!t) return;
   const revision = stateRevision.current;
@@ -90,7 +119,7 @@ export default function Home(){
   }
  }, []);
  useEffect(()=>{if(!token)return;refresh(token);const id=setInterval(()=>refresh(token,true),8000);return()=>clearInterval(id)},[token,refresh]);
- const join=async()=>{setError('');setBusy(true);try{const data=await api('/api/join','',{code:invite,name:name.trim(),style,wantsFood:food});localStorage.setItem('bcc-member-token',data.token);setToken(data.token);await refresh(data.token);setScreen('vote')}catch(e){setError((e as Error).message)}finally{setBusy(false)}};
+ const join=async()=>{setError('');setBusy(true);try{const data=await api('/api/join','',{code:invite,name:name.trim(),style,wantsFood:food});localStorage.setItem('bcc-member-token',data.token);setFeatured(browserQuickPicks(true));setToken(data.token);await refresh(data.token);setScreen('vote')}catch(e){setError((e as Error).message)}finally{setBusy(false)}};
  const saveVote=async(venueId:string,liked:boolean)=>{if(!state||busy)return;setBusy(true);setError('');try{await api('/api/vote',token,{venueId,liked});await refresh(token,true);if(index===featured.length-1)setScreen('results');else setIndex(i=>i+1)}catch(e){setError((e as Error).message)}finally{setBusy(false)}};
  const resetVotes = async () => {
   if (!state || busy || !window.confirm('Clear all your votes and start again? Your place in the group is kept.')) return;
@@ -101,6 +130,7 @@ export default function Home(){
    await api('/api/vote', token, undefined, 'DELETE');
    stateRevision.current++;
    setState(current => current ? { ...current, mine: {} } : current);
+   setFeatured(browserQuickPicks(true));
    setIndex(0);
    setScreen('vote');
    setNotice('Your votes were reset. You can start again.');
@@ -162,7 +192,7 @@ export default function Home(){
  {!state?<section className="body"><div className="hero"><span className="eyebrow">NOVEMBER 6—15 · 2026</span><div className="hero-glass">🍸</div><h1>One city.<br/>14 friends.<br/><em>One great night.</em></h1><p>Pick your favourite participating bars. The group decides the rest.</p></div><div className="panel"><label>YOUR FIRST NAME<input maxLength={32} placeholder="e.g. Darren" value={name} onChange={e=>setName(e.target.value)}/></label><p className="label">YOUR KIND OF EVENING</p><div className="chips">{[['mixed','A bit of both'],['lively','Lively'],['relaxed','Relaxed']].map(([v,t])=><button className={style===v?'active':''} key={v} onClick={()=>setStyle(v)}>{t}</button>)}</div><label className="check"><input type="checkbox" checked={food} onChange={e=>setFood(e.target.checked)}/> Include a food stop</label><button className="primary" disabled={!name.trim()||!invite||busy} onClick={join}>{busy?'Joining…':'Join the cocktail trail'} <ArrowRight size={18}/></button>{!invite&&<p className="hint">Open the private link from your WhatsApp organiser to join.</p>}<p className="hint">No account or app download · Around 2 minutes</p></div></section>:
  <>
  {screen==='welcome'&&<section className="body"><div className="hero compact"><span className="eyebrow">YOUR GROUP IS READY</span><h1>Welcome back,<br/><em>{state.me.name}.</em></h1><p>{state.joined} of 14 joined · {voted} bars rated</p></div><div className="panel stack"><button className="primary" onClick={()=>setScreen('vote')}>Explore cocktail bars <ArrowRight size={18}/></button><button className="secondary" onClick={()=>setScreen('results')}>See group results <Trophy size={18}/></button><button className="secondary" onClick={()=>setScreen('trail')}>Our cocktail trail <MapPin size={18}/></button><button className="secondary" onClick={share}>Share invitation <Share2 size={18}/></button></div></section>}
- {screen==='vote'&&<section className="body"><div className="section-head"><div><span className="eyebrow">QUICK PICKS</span><h2>Would you go?</h2></div><span className="counter">{index+1} / {featured.length}</span></div><div className="progress">{featured.map((v,i)=><div key={v.id} className={i<=index?'on':''}/>)}</div><div className="venue-card"><div className="venue-art"><span className="art-glass">{['🍸','🍹','🥂','🍋','🍒','🍺','🍽️','🥃','🍔','✨'][index]}</span><span className="art-label">BELFAST COCKTAIL WEEK</span></div><div className="venue-content"><span className="eyebrow">{all(featured[index])}</span><h2>{featured[index].name}</h2><p>{featured[index].description||'Official participating venue'}</p><div className="offer"><span>COCKTAIL WEEK</span><strong>{cocktailButton(featured[index])}</strong><small>Show your wristband to redeem the event offer.</small></div></div></div><div className="vote-actions"><button className="secondary" disabled={busy} onClick={()=>saveVote(featured[index].id,false)}><X size={18}/> Skip</button><button className="primary" disabled={busy} onClick={()=>saveVote(featured[index].id,true)}><Heart size={18}/> Interested</button></div><div className="footer-actions">{index>0&&<button onClick={()=>setIndex(i=>i-1)}><ArrowLeft size={14}/> Previous</button>}<button onClick={()=>setScreen('results')}>See leaderboard <ArrowRight size={14}/></button></div></section>}
+ {screen==='vote'&&currentPick&&<section className="body"><div className="section-head"><div><span className="eyebrow">QUICK PICKS</span><h2>Would you go?</h2></div><span className="counter">{index+1} / {featured.length}</span></div><div className="progress">{featured.map((v,i)=><div key={v.id} className={i<=index?'on':''}/>)}</div><div className="venue-card"><div className="venue-art"><span className="art-glass">{['🍸','🍹','🥂','🍋','🍒','🍺','🍽️','🥃','🍔','✨'][index]}</span><span className="art-label">BELFAST COCKTAIL WEEK</span></div><div className="venue-content"><span className="eyebrow">{all(currentPick)}</span><h2>{currentPick.name}</h2><p>{currentPick.description||'Official participating venue'}</p><div className="offer"><span>COCKTAIL WEEK</span><strong>{cocktailButton(currentPick)}</strong><small>Show your wristband to redeem the event offer.</small></div></div></div><div className="vote-actions"><button className="secondary" disabled={busy} onClick={()=>saveVote(currentPick.id,false)}><X size={18}/> Skip</button><button className="primary" disabled={busy} onClick={()=>saveVote(currentPick.id,true)}><Heart size={18}/> Interested</button></div><div className="footer-actions">{index>0&&<button onClick={()=>setIndex(i=>i-1)}><ArrowLeft size={14}/> Previous</button>}<button onClick={()=>setScreen('results')}>See leaderboard <ArrowRight size={14}/></button></div></section>}
  {screen==='results'&&<section className="body"><div className="section-head"><div><span className="eyebrow">THE GROUP DECIDES</span><h2>Top cocktail bars</h2></div><button className="refresh" onClick={()=>refresh(token)} aria-label="Refresh results"><RefreshCw size={19}/></button></div><div className="stats"><div><strong>{state.joined}<small> / 14</small></strong><span>Members joined</span></div><div><strong>{voted}</strong><span>Your ratings</span></div><div><strong>{liked}</strong><span>Your favourites</span></div></div><p className="hint">Real votes · Automatically refreshes every 8 seconds</p><button className="secondary" disabled={busy || voted === 0} onClick={resetVotes}>Reset my votes</button><div className="rankings">{rows.slice(0,showAll?36:10).map((v,i)=><div key={v.id} className="rank"><div className="rank-top"><span className="rank-num">{String(i+1).padStart(2,'0')}</span><span className="rank-name">{v.name}{state.mine[v.id]===true&&<Heart size={12} fill="currentColor"/>}</span><span className="rank-count">{state.summary[v.id]?.likes||0} <small>likes</small></span></div><small className="rank-cocktail">{cocktailButton(v)}</small><div className="bar"><div style={{width:`${(state.summary[v.id]?.likes||0)/14*100}%`}}/></div></div>)}</div><button className="secondary" onClick={()=>setShowAll(!showAll)}>{showAll?'Show fewer':'See all 36 venues'} <ChevronDown size={17}/></button><button className="primary" onClick={()=>setScreen('trail')}><Sparkles size={18}/> View group trail</button></section>}
  {screen==='trail' && <section className="body">
   <div className="section-head">
