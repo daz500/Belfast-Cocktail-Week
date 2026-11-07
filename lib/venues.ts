@@ -71,5 +71,17 @@ export const VENUES: Venue[] = names.map(name => {
     cocktailPhoto: `/cocktails/${id}.${format}`,
   };
 });
-export const FEATURED=['the-perch-rooftop-bar','rita-s','crimson-cocktail-lounge','the-foundry','malmaison','the-deer-s-head','sweet-afton','the-northern-whig','common-market','the-fitzwilliam-hotel'];
+// Closest ten by maximum straight-line separation, using event guide addresses.
+export const FEATURED = [
+  'the-watson',
+  'the-maverick',
+  'crimson-cocktail-lounge',
+  'the-courtyard-at-haymarket',
+  'the-lounge-at-haymarket',
+  'the-stock-exchange',
+  'the-deer-s-head',
+  'the-foundry',
+  '39-gordon-street',
+  'common-market',
+];
 export const mapSearch=(v:Venue)=>`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(v.address||`${v.name}, Belfast`)}`;
