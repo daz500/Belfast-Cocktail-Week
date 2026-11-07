@@ -30,4 +30,4 @@ alter table public.votes enable row level security;
 alter table public.trails enable row level security;
 -- Expose only the permissions the server needs through the Data API.
 grant select, insert on public.members, public.trails to service_role;
-grant select, insert, update on public.votes to service_role;
+grant select, insert, update, delete on public.votes to service_role;
