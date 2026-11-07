@@ -49,7 +49,30 @@ function walkingLinks(stops: Venue[]) {
  return links;
 }
 
-function CocktailPhotoDialog({ venue, onClose }: { venue: Venue; onClose: () => void }) {
+type VenueVoteProps = {
+ venue: Venue;
+ vote?: boolean;
+ busy: boolean;
+ onVote: (liked: boolean) => void;
+};
+
+function VenueVoteActions({ venue, vote, busy, onVote }: VenueVoteProps) {
+ return (
+  <div className="vote-actions">
+   <button type="button" className={vote === false ? 'primary' : 'secondary'} aria-pressed={vote === false}
+    aria-label={`Not interested in ${venue.name}`} disabled={busy} onClick={() => onVote(false)}>
+    <X size={16} /> Not interested
+   </button>
+   <button type="button" className={vote === true ? 'primary' : 'secondary'} aria-pressed={vote === true}
+    aria-label={`Interested in ${venue.name}`} disabled={busy} onClick={() => onVote(true)}>
+    <Heart size={16} fill={vote === true ? 'currentColor' : 'none'} /> Interested
+   </button>
+  </div>
+ );
+}
+
+function CocktailPhotoDialog({ onClose, error, ...voteProps }: VenueVoteProps & { onClose: () => void; error: string }) {
+ const { venue } = voteProps;
  const dialog = useRef<HTMLDialogElement>(null);
  const ingredients = venue.cocktailIngredients;
 
@@ -68,6 +91,8 @@ function CocktailPhotoDialog({ venue, onClose }: { venue: Venue; onClose: () => 
      <button className="cocktail-close" aria-label="Close photo"><X size={20} /></button>
     </form>
    </div>
+   <div style={{ marginBottom: 12 }}><VenueVoteActions {...voteProps} /></div>
+   {error && <p role="alert">{error}</p>}
    {venue.cocktailPhoto && ingredients?.length ? <>
     <img className="cocktail-photo" src={venue.cocktailPhoto} alt={`${venue.cocktail} at ${venue.name}`} />
     <h3 className="cocktail-ingredients-title">Ingredients</h3>
@@ -120,7 +145,24 @@ export default function Home(){
  }, []);
  useEffect(()=>{if(!token)return;refresh(token);const id=setInterval(()=>refresh(token,true),8000);return()=>clearInterval(id)},[token,refresh]);
  const join=async()=>{setError('');setBusy(true);try{const data=await api('/api/join','',{code:invite,name:name.trim(),style,wantsFood:food});localStorage.setItem('bcc-member-token',data.token);setFeatured(browserQuickPicks(true));setToken(data.token);await refresh(data.token);setScreen('vote')}catch(e){setError((e as Error).message)}finally{setBusy(false)}};
- const saveVote=async(venueId:string,liked:boolean)=>{if(!state||busy)return;setBusy(true);setError('');try{await api('/api/vote',token,{venueId,liked});await refresh(token,true);if(index===featured.length-1)setScreen('results');else setIndex(i=>i+1)}catch(e){setError((e as Error).message)}finally{setBusy(false)}};
+ const saveVote = async (venueId: string, liked: boolean, advance = false) => {
+  if (!state || !token || busy) return;
+  setBusy(true);
+  setError('');
+  try {
+   await api('/api/vote', token, { venueId, liked });
+   stateRevision.current++;
+   await refresh(token, true);
+   if (advance) {
+    if (index === featured.length - 1) setScreen('results');
+    else setIndex(i => i + 1);
+   }
+  } catch (e) {
+   setError((e as Error).message);
+  } finally {
+   setBusy(false);
+  }
+ };
  const resetVotes = async () => {
   if (!state || busy || !window.confirm('Clear all your votes and start again? Your place in the group is kept.')) return;
   setBusy(true);
@@ -192,8 +234,39 @@ export default function Home(){
  {!state?<section className="body"><div className="hero"><span className="eyebrow">NOVEMBER 6—15 · 2026</span><div className="hero-glass">🍸</div><h1>One city.<br/>14 friends.<br/><em>One great night.</em></h1><p>Pick your favourite participating bars. The group decides the rest.</p></div><div className="panel"><label>YOUR FIRST NAME<input maxLength={32} placeholder="e.g. Darren" value={name} onChange={e=>setName(e.target.value)}/></label><p className="label">YOUR KIND OF EVENING</p><div className="chips">{[['mixed','A bit of both'],['lively','Lively'],['relaxed','Relaxed']].map(([v,t])=><button className={style===v?'active':''} key={v} onClick={()=>setStyle(v)}>{t}</button>)}</div><label className="check"><input type="checkbox" checked={food} onChange={e=>setFood(e.target.checked)}/> Include a food stop</label><button className="primary" disabled={!name.trim()||!invite||busy} onClick={join}>{busy?'Joining…':'Join the cocktail trail'} <ArrowRight size={18}/></button>{!invite&&<p className="hint">Open the private link from your WhatsApp organiser to join.</p>}<p className="hint">No account or app download · Around 2 minutes</p></div></section>:
  <>
  {screen==='welcome'&&<section className="body"><div className="hero compact"><span className="eyebrow">YOUR GROUP IS READY</span><h1>Welcome back,<br/><em>{state.me.name}.</em></h1><p>{state.joined} of 14 joined · {voted} bars rated</p></div><div className="panel stack"><button className="primary" onClick={()=>setScreen('vote')}>Explore cocktail bars <ArrowRight size={18}/></button><button className="secondary" onClick={()=>setScreen('results')}>See group results <Trophy size={18}/></button><button className="secondary" onClick={()=>setScreen('trail')}>Our cocktail trail <MapPin size={18}/></button><button className="secondary" onClick={share}>Share invitation <Share2 size={18}/></button></div></section>}
- {screen==='vote'&&currentPick&&<section className="body"><div className="section-head"><div><span className="eyebrow">QUICK PICKS</span><h2>Would you go?</h2></div><span className="counter">{index+1} / {featured.length}</span></div><div className="progress">{featured.map((v,i)=><div key={v.id} className={i<=index?'on':''}/>)}</div><div className="venue-card"><div className="venue-art"><span className="art-glass">{['🍸','🍹','🥂','🍋','🍒','🍺','🍽️','🥃','🍔','✨'][index]}</span><span className="art-label">BELFAST COCKTAIL WEEK</span></div><div className="venue-content"><span className="eyebrow">{all(currentPick)}</span><h2>{currentPick.name}</h2><p>{currentPick.description||'Official participating venue'}</p><div className="offer"><span>COCKTAIL WEEK</span><strong>{cocktailButton(currentPick)}</strong><small>Show your wristband to redeem the event offer.</small></div></div></div><div className="vote-actions"><button className="secondary" disabled={busy} onClick={()=>saveVote(currentPick.id,false)}><X size={18}/> Skip</button><button className="primary" disabled={busy} onClick={()=>saveVote(currentPick.id,true)}><Heart size={18}/> Interested</button></div><div className="footer-actions">{index>0&&<button onClick={()=>setIndex(i=>i-1)}><ArrowLeft size={14}/> Previous</button>}<button onClick={()=>setScreen('results')}>See leaderboard <ArrowRight size={14}/></button></div></section>}
- {screen==='results'&&<section className="body"><div className="section-head"><div><span className="eyebrow">THE GROUP DECIDES</span><h2>Top cocktail bars</h2></div><button className="refresh" onClick={()=>refresh(token)} aria-label="Refresh results"><RefreshCw size={19}/></button></div><div className="stats"><div><strong>{state.joined}<small> / 14</small></strong><span>Members joined</span></div><div><strong>{voted}</strong><span>Your ratings</span></div><div><strong>{liked}</strong><span>Your favourites</span></div></div><p className="hint">Real votes · Automatically refreshes every 8 seconds</p><button className="secondary" disabled={busy || voted === 0} onClick={resetVotes}>Reset my votes</button><div className="rankings">{rows.slice(0,showAll?36:10).map((v,i)=><div key={v.id} className="rank"><div className="rank-top"><span className="rank-num">{String(i+1).padStart(2,'0')}</span><span className="rank-name">{v.name}{state.mine[v.id]===true&&<Heart size={12} fill="currentColor"/>}</span><span className="rank-count">{state.summary[v.id]?.likes||0} <small>likes</small></span></div><small className="rank-cocktail">{cocktailButton(v)}</small><div className="bar"><div style={{width:`${(state.summary[v.id]?.likes||0)/14*100}%`}}/></div></div>)}</div><button className="secondary" onClick={()=>setShowAll(!showAll)}>{showAll?'Show fewer':'See all 36 venues'} <ChevronDown size={17}/></button><button className="primary" onClick={()=>setScreen('trail')}><Sparkles size={18}/> View group trail</button></section>}
+ {screen==='vote'&&currentPick&&<section className="body"><div className="section-head"><div><span className="eyebrow">QUICK PICKS</span><h2>Would you go?</h2></div><span className="counter">{index+1} / {featured.length}</span></div><div className="progress">{featured.map((v,i)=><div key={v.id} className={i<=index?'on':''}/>)}</div><div className="venue-card"><div className="venue-art"><span className="art-glass">{['🍸','🍹','🥂','🍋','🍒','🍺','🍽️','🥃','🍔','✨'][index]}</span><span className="art-label">BELFAST COCKTAIL WEEK</span></div><div className="venue-content"><span className="eyebrow">{all(currentPick)}</span><h2>{currentPick.name}</h2><p>{currentPick.description||'Official participating venue'}</p><div className="offer"><span>COCKTAIL WEEK</span><strong>{cocktailButton(currentPick)}</strong><small>Show your wristband to redeem the event offer.</small></div></div></div><div className="vote-actions"><button className="secondary" disabled={busy} onClick={()=>saveVote(currentPick.id,false,true)}><X size={18}/> Skip</button><button className="primary" disabled={busy} onClick={()=>saveVote(currentPick.id,true,true)}><Heart size={18}/> Interested</button></div><div className="footer-actions">{index>0&&<button onClick={()=>setIndex(i=>i-1)}><ArrowLeft size={14}/> Previous</button>}<button onClick={()=>setScreen('results')}>See leaderboard <ArrowRight size={14}/></button></div></section>}
+ {screen==='results' && <section className="body">
+  <div className="section-head">
+   <div><span className="eyebrow">THE GROUP DECIDES</span><h2>Top cocktail bars</h2></div>
+   <button className="refresh" onClick={() => refresh(token)} aria-label="Refresh results"><RefreshCw size={19} /></button>
+  </div>
+  <div className="stats">
+   <div><strong>{state.joined}<small> / 14</small></strong><span>Members joined</span></div>
+   <div><strong>{voted}</strong><span>Your ratings</span></div>
+   <div><strong>{liked}</strong><span>Your favourites</span></div>
+  </div>
+  <p className="hint">Vote on any venue below. Group results refresh every 8 seconds.</p>
+  <button className="secondary" aria-expanded={showAll} aria-controls="venue-rankings" onClick={() => setShowAll(!showAll)}>
+   {showAll ? 'Show top 10' : 'Browse and vote on all 36 venues'} <ChevronDown size={17} />
+  </button>
+  <button className="secondary" disabled={busy || voted === 0} onClick={resetVotes}>Reset my votes</button>
+  <div className="rankings" id="venue-rankings">
+   {rows.slice(0, showAll ? VENUES.length : 10).map((venue, i) => (
+    <div key={venue.id} className="rank">
+     <div className="rank-top">
+      <span className="rank-num">{String(i + 1).padStart(2, '0')}</span>
+      <span className="rank-name">{venue.name}{state.mine[venue.id] === true && <Heart size={12} fill="currentColor" />}</span>
+      <span className="rank-count">{state.summary[venue.id]?.likes || 0} <small>likes</small></span>
+     </div>
+     <small className="rank-cocktail">{cocktailButton(venue)}</small>
+     <div className="bar"><div style={{ width: `${(state.summary[venue.id]?.likes || 0) / 14 * 100}%` }} /></div>
+     <VenueVoteActions venue={venue} vote={state.mine[venue.id]} busy={busy || !token}
+      onVote={liked => saveVote(venue.id, liked)} />
+    </div>
+   ))}
+  </div>
+  <button className="primary" onClick={() => setScreen('trail')}><Sparkles size={18} /> View group trail</button>
+ </section>}
  {screen==='trail' && <section className="body">
   <div className="section-head">
    <div><span className="eyebrow">GROUP ITINERARY</span><h2>The cocktail trail</h2></div>
@@ -265,7 +338,14 @@ export default function Home(){
  </section>}
  <nav className="bottom-nav">{[{id:'welcome' as const,label:'Home',icon:<Martini size={19}/>},{id:'vote' as const,label:'Pick',icon:<Heart size={19}/>},{id:'results' as const,label:'Results',icon:<Trophy size={19}/>},{id:'trail' as const,label:'Trail',icon:<MapPin size={19}/>}].map(t=><button key={t.id} className={screen===t.id?'selected':''} onClick={()=>setScreen(t.id)}>{t.icon}<span>{t.label}</span></button>)}</nav>
  </>}
- {selectedCocktail && <CocktailPhotoDialog venue={selectedCocktail} onClose={() => setSelectedCocktail(null)} />}
+ {selectedCocktail && <CocktailPhotoDialog
+  venue={selectedCocktail}
+  vote={state?.mine[selectedCocktail.id]}
+  busy={busy || !token}
+  onVote={liked => saveVote(selectedCocktail.id, liked)}
+  error={error}
+  onClose={() => setSelectedCocktail(null)}
+ />}
  <footer>Unofficial group planner · <a href={COCKTAIL_GUIDE_URL} target="_blank" rel="noopener noreferrer">Official event guide</a></footer>
  </div></main>
 }
