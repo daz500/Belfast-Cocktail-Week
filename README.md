@@ -8,7 +8,7 @@ A mobile-first, deployable **Next.js + Supabase** app for a **14-member WhatsApp
 - Maximum 14 joined members (a basic count cap, not a transactional hard limit under simultaneous joins).
 - 10 quick-pick cards from the **36 verified participating venue names**; members can change their selections.
 - Votes stored centrally in Supabase, with an automatically refreshed group leaderboard (every 8 seconds).
-- Organiser-only generation of a five-stop trail using the group votes; optionally uses OpenAI, with a deterministic vote-based fallback.
+- The organiser can generate a private five-stop draft from the group votes, or edit a copy of the published trail. Add, remove, and reorder venues before publishing. Generation optionally uses OpenAI, with a deterministic vote-based fallback.
 - Walking directions via Google Maps and WhatsApp-ready sharing using the phone's share sheet.
 - Signed-in member sessions stored only on that device in `localStorage`.
 
@@ -18,7 +18,7 @@ A mobile-first, deployable **Next.js + Supabase** app for a **14-member WhatsApp
 2. Copy your Supabase project URL and the server-side secret key from **Project Settings → API Keys**. For local development, create `.env.local` and set `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, a long random `GROUP_INVITE_CODE`, and a **different** long random `ADMIN_CODE`. Keep credentials and codes in environment variables. Optionally set `OPENAI_API_KEY` and `OPENAI_MODEL`.
 3. Install dependencies with `npm install` and run `npm run dev`. Visit `http://localhost:3000/?invite=YOUR_GROUP_INVITE_CODE`.
 4. Deploy the repository to Vercel as a Next.js project and add the same environment variables in Vercel project settings. Redeploy after changing env values.
-5. Share `https://YOUR-DOMAIN/?invite=YOUR_GROUP_INVITE_CODE` in the WhatsApp group. Each friend opens the same URL, enters their first name and votes. The organiser opens the **Trail** tab and enters `ADMIN_CODE` to publish a group itinerary.
+5. Share `https://YOUR-DOMAIN/?invite=YOUR_GROUP_INVITE_CODE` in the WhatsApp group. Each friend opens the same URL, enters their first name and votes. The organiser enters `ADMIN_CODE` under **Trail → Organiser controls**, edits a draft, then chooses **Publish trail**.
 
 ## Important operational points
 

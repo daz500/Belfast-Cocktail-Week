@@ -69,3 +69,56 @@
   margin-top: 10px;
   color: #f5c0dc;
 }
+
+.trail-directions { text-decoration: none; }
+.trail-draft {
+  display: grid;
+  gap: 10px;
+}
+.trail-draft h3, .trail-draft p { margin: 0; }
+.draft-stops {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.draft-stops li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #433047;
+  font-size: 13px;
+}
+.draft-stop-actions {
+  display: flex;
+  gap: 4px;
+}
+.draft-stop-actions button {
+  min-width: 36px;
+  min-height: 44px;
+  padding: 0;
+  border: 1px solid #654b65;
+  border-radius: 8px;
+  background: #2c2135;
+  color: #f5dfec;
+  font-size: 17px;
+}
+.draft-add {
+  display: grid;
+  gap: 6px;
+  color: #e4d2e2;
+  font-size: 13px;
+}
+.draft-add select {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid #654b65;
+  border-radius: 8px;
+  background: #302338;
+  color: #fff;
+  font: inherit;
+}
