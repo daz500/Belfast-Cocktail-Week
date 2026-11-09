@@ -7,6 +7,8 @@ import './v2.css';
 
 type VoteValue = boolean | undefined;
 type Votes = Record<string, Record<string, VoteValue>>;
+type SavedTrail={venue_ids:string[];explanation:string;created_at:string};
+const LIVE=process.env.NEXT_PUBLIC_BCC_V2_LIVE==='true';
 type Rule = {maxDislikes:number;minLikes:number;minRatings:number;sort:'likes'|'net'|'approval'};
 type Override = {action:'include'|'exclude';reason:string};
 type Publication = {version:number;date:string;ids:string[];rules:Rule;overrides:Record<string,Override>;scores:Record<string,{likes:number;dislikes:number}>};
@@ -60,7 +62,19 @@ function CocktailDetails({venue,onClose}:{venue:Venue;onClose:()=>void}){
 export default function V2Preview(){
  const [tab,setTab]=useState<Tab>('home');
  const [selectedCocktail,setSelectedCocktail]=useState<Venue|null>(null);
- const [votes,setVotes]=useState<Votes>(demoVotes);
+ const [votes,setVotes]=useState<Votes>(()=>LIVE?{}:demoVotes());
+ const [peopleLive,setPeopleLive]=useState<Array<{key:string;name:string}>>([]);
+ const [meKey,setMeKey]=useState('');
+ const [token,setToken]=useState('');
+ const [invite,setInvite]=useState('');
+ const [joiningName,setJoiningName]=useState('');
+ const [joining,setJoining]=useState(false);
+ const [connected,setConnected]=useState(false);
+ const [loadError,setLoadError]=useState('');
+ const [voteBusy,setVoteBusy]=useState(false);
+ const [adminCode,setAdminCode]=useState('');
+ const [savedTrails,setSavedTrails]=useState<SavedTrail[]>([]);
+ const [joined,setJoined]=useState(0);
  const [rule,setRule]=useState<Rule>(initialRule);
  const [preset,setPreset]=useState('strict');
  const [selectedPerson,setSelectedPerson]=useState('All participants');
@@ -77,7 +91,41 @@ export default function V2Preview(){
  const [aiNotice,setAiNotice]=useState('');
  const [showMatrix,setShowMatrix]=useState(false);
  const [maxVenues,setMaxVenues]=useState(6);
- const voterNames=[...people,'You (demo)'];
+ const voterNames=LIVE?peopleLive.map(p=>p.key):[...people,'You (demo)'];
+ const currentVoter=LIVE?meKey:'You (demo)';
+ const friendlyName=(key:string)=>LIVE?(peopleLive.find(p=>p.key===key)?.name||key):key;
+ const existingTrail=savedTrails[0];
+ const officialTrailIds=LIVE?(existingTrail?.venue_ids||[]):undefined;
+ const refreshLive=async(t:string)=>{
+  const response=await fetch('/api/v2/state',{headers:{'x-member-token':t},cache:'no-store'});
+  const data=await response.json();
+  if(!response.ok)throw new Error(data.error||'Could not load the live voting records');
+  setVotes(data.votes||{});setPeopleLive(data.people||[]);setMeKey(data.meKey||'');
+  setSavedTrails(data.trails||[]);setJoined(data.joined||0);setConnected(true);setLoadError('');
+ };
+ useEffect(()=>{
+  if(!LIVE)return;
+  const params=new URLSearchParams(window.location.search);
+  setInvite(params.get('invite')||'');
+  const t=localStorage.getItem('bcc-member-token')||'';
+  setToken(t);
+  if(t)refreshLive(t).catch(e=>{setLoadError((e as Error).message);setConnected(false)});
+ },[]);
+ useEffect(()=>{
+  if(!LIVE||!token||!connected)return;
+  const timer=setInterval(()=>{refreshLive(token).catch(e=>setLoadError((e as Error).message))},10000);
+  return()=>clearInterval(timer);
+ },[token,connected]);
+ const joinGroup=async()=>{
+  if(!invite||!joiningName.trim()||joining)return;
+  setJoining(true);setLoadError('');
+  try{
+   const response=await fetch('/api/join',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:invite,name:joiningName.trim(),style:'mixed',wantsFood:false})});
+   const data=await response.json();if(!response.ok)throw new Error(data.error||'Unable to join group');
+   localStorage.setItem('bcc-member-token',data.token);setToken(data.token);
+   await refreshLive(data.token);
+  }catch(e){setLoadError((e as Error).message)}finally{setJoining(false)}
+ };
  const scores=useMemo(()=>Object.fromEntries(VENUES.map(v=>{
   const vals=voterNames.map(p=>votes[p]?.[v.id]);
   return [v.id,{likes:vals.filter(x=>x===true).length,dislikes:vals.filter(x=>x===false).length}];
@@ -98,7 +146,16 @@ export default function V2Preview(){
  const latest=publications[publications.length-1];
  const setPresetRule=(name:string)=>{setPreset(name);setRule({...presetRules[name]});setOrder([]);setOverrides({});setDraftNotice('')};
  const changeRule=(patch:Partial<Rule>)=>{setPreset('custom');setRule(v=>({...v,...patch}));setDraftNotice('')};
- const setVote=(id:string,liked:boolean)=>setVotes(prev=>({...prev,'You (demo)':{...prev['You (demo)'],[id]:liked}}));
+ const setVote=async(id:string,liked:boolean)=>{
+  if(!LIVE){setVotes(prev=>({...prev,'You (demo)':{...prev['You (demo)'],[id]:liked}}));return;}
+  if(!token||voteBusy)return;
+  setVoteBusy(true);setLoadError('');
+  try{
+   const response=await fetch('/api/vote',{method:'POST',headers:{'Content-Type':'application/json','x-member-token':token},body:JSON.stringify({venueId:id,liked})});
+   const data=await response.json();if(!response.ok)throw new Error(data.error||'Vote not saved');
+   await refreshLive(token);
+  }catch(e){setLoadError((e as Error).message)}finally{setVoteBusy(false)}
+ };
  const adjust=(id:string,on:boolean)=>{
   const normal=baseline.has(id);
   setOverrides(prev=>{const next={...prev};if(on===normal)delete next[id];else next[id]={action:on?'include':'exclude',reason:prev[id]?.reason||''};return next});
@@ -109,10 +166,21 @@ export default function V2Preview(){
   [ids[i],ids[j]]=[ids[j],ids[i]];setOrder(ids);
  };
  const invalidReasons=Object.entries(overrides).some(([,v])=>!v.reason.trim());
- const publish=()=>{
+ const publish=async()=>{
   if(!officialIds.length||invalidReasons)return;
+  if(LIVE){
+   if(!adminCode.trim()||!token){setDraftNotice('Enter your organiser code before publishing.');return;}
+   if(!window.confirm('Publish this shortlist to the whole group? It will replace the currently displayed trail.'))return;
+   try{
+    const response=await fetch('/api/trail',{method:'POST',headers:{'Content-Type':'application/json','x-member-token':token},body:JSON.stringify({action:'publish',adminCode,venueIds:officialIds,
+     rules:rule,overrides})});
+    const data=await response.json();if(!response.ok)throw new Error(data.error||'Publishing failed');
+    await refreshLive(token);setDraftNotice('Official shortlist published. All group members can now see the update.');
+   }catch(e){setDraftNotice((e as Error).message)}
+   return;
+  }
   const snap:Publication={version:publications.length+1,date:new Date().toLocaleString('en-GB'),ids:[...officialIds],rules:{...rule},overrides:structuredClone(overrides),scores:structuredClone(scores)};
-  setPublications(p=>[...p,snap]);setDraftNotice('Demo version '+snap.version+' published in this browser only. Supabase was not changed.');
+  setPublications(p=>[...p,snap]);setDraftNotice('Demo version '+snap.version+' published in this browser only.');
  };
  const instantAnswer=(input:string):string=>{
   const q=input.trim().toLowerCase();
@@ -184,7 +252,7 @@ export default function V2Preview(){
   }
   setAiBusy(true);
   try{
-   const response=await fetch('/api/v2/chat',{method:'POST',headers:{'Content-Type':'application/json'},
+   const response=await fetch('/api/v2/chat',{method:'POST',headers:{'Content-Type':'application/json',...(LIVE?{'x-member-token':token}:{})},
     body:JSON.stringify({question:q,history:prior,
      venues:counted.map(v=>({name:v.name,cocktail:v.cocktail,likes:v.likes,dislikes:v.dislikes})),
      members:participation.map(p=>({name:p.name,ratings:p.cast,
@@ -209,22 +277,33 @@ export default function V2Preview(){
  const nav:[Tab,string,typeof Heart][]=[['home','Home',Martini],['vote','Vote',Heart],['results','Results',BarChart3],['trail','Trail',Route],['ai','AI',Sparkles]];
  return <main className="v2-shell"><div className="v2-app">
   <header className="v2-header"><div className="v2-brand"><span className="v2-symbol"><Martini size={24}/></span><div><small>BELFAST COCKTAIL CLUB</small><strong>The social cocktail planner</strong></div></div><span className="v2-preview-pill">V2 TEST</span></header>
-  <div className="v2-demo-banner"><LockKeyhole size={15}/> Isolated demonstration · Fake participant names · No live votes or database writes</div>
+  <div className="v2-demo-banner"><LockKeyhole size={15}/> {LIVE?'Authenticated group · Live shared votes and official trail':'Isolated demonstration · Fake participant names · No live votes or database writes'}</div>
+  {LIVE&&!connected&&<section className="v2-content"><h1 className="v2-page-title">Welcome to the Cocktail Club</h1><p className="v2-muted">Existing members on this device will sign in automatically. New members can join using the original private invitation link.</p>
+   {loadError&&<p role="alert" className="v2-error">{loadError}</p>}
+   {!token&&<div className="v2-panel"><label>Your name<input className="v2-input" maxLength={32} value={joiningName} onChange={e=>setJoiningName(e.target.value)} placeholder="Enter your name"/></label>
+    <p className="v2-muted">{invite?'Invitation detected':'Open the invitation link shared in WhatsApp to join.'}</p>
+    <button className="v2-main-button" disabled={joining||!invite||!joiningName.trim()} onClick={joinGroup}>{joining?'Joining…':'Join group'}</button>
+   </div>}
+   {token&&<button className="v2-outline" onClick={()=>{refreshLive(token).catch(e=>setLoadError((e as Error).message))}}>Retry session</button>}
+   {token&&<button className="v2-outline" onClick={()=>{localStorage.removeItem('bcc-member-token');setToken('');setLoadError('')}}>Use a new invitation</button>}
+  </section>}
+  {(!LIVE||connected)&&<>
+  {loadError&&<div role="alert" className="v2-error" style={{padding:12}}>{loadError}</div>}
   {tab==='home'&&<section className="v2-content">
    <div className="v2-hero"><span className="v2-kicker">WELCOME TO VERSION 2.0</span><h1>Your people.<br/><em>Your picks.</em><br/>One great night.</h1><p>See the votes, find your favourites and shape the perfect Belfast cocktail trail.</p><button className="v2-main-button" onClick={()=>showTab('results')}>Explore the results <ChevronRight size={18}/></button></div>
-   <div className="v2-grid3"><div className="v2-stat"><strong>{active}/7</strong><span>Active demo voters</span></div><div className="v2-stat"><strong>{totalVotes}</strong><span>Demo ratings</span></div><div className="v2-stat"><strong>{counted.filter(v=>v.dislikes===0).length}</strong><span>No dislikes</span></div></div>
+   <div className="v2-grid3"><div className="v2-stat"><strong>{active}/{LIVE?joined:7}</strong><span>Active voters</span></div><div className="v2-stat"><strong>{totalVotes}</strong><span>Ratings</span></div><div className="v2-stat"><strong>{counted.filter(v=>v.dislikes===0).length}</strong><span>No dislikes</span></div></div>
    <div className="v2-heading"><h2>Group favourites</h2><button onClick={()=>showTab('results')}>View all <ChevronRight size={15}/></button></div>
    {top.map((v,i)=><div className="v2-line" key={v.id}><span className="v2-rank">{String(i+1).padStart(2,'0')}</span><div><strong>{v.name}</strong>{cocktailLink(v)}</div><span className="v2-positive"><Heart size={14}/> {v.likes}</span></div>)}
-   <button className="v2-outline" onClick={()=>showTab('organiser')}><ShieldCheck size={17}/> Open organiser studio (demo)</button>
+   <button className="v2-outline" onClick={()=>showTab('organiser')}><ShieldCheck size={17}/> Open organiser studio</button>
   </section>}
   {tab==='vote'&&<section className="v2-content">
-   <span className="v2-kicker">TRY THE VOTING EXPERIENCE</span><h1 className="v2-page-title">Make your picks</h1>
-   <p className="v2-muted">Votes below belong to the fictional “You (demo)” account. They change this preview only.</p>
+   <span className="v2-kicker">VOTE ON COCKTAIL VENUES</span><h1 className="v2-page-title">Make your picks</h1>
+   <p className="v2-muted">{LIVE?'Your votes are saved to the group and update the live results.':'Votes belong to fictional “You (demo)” and change this preview only.'}</p>
    <input className="v2-input" placeholder="Search 36 venues..." value={filter} onChange={e=>setFilter(e.target.value)}/>
-   {VENUES.filter(v=>v.name.toLowerCase().includes(filter.toLowerCase())).map(v=><div className="v2-venue" key={v.id}><div className="v2-venue-heading"><div><strong>{v.name}</strong>{cocktailLink(v)}</div><a href={mapSearch(v)} target="_blank" rel="noreferrer" aria-label={'Map for '+v.name}><MapPin size={16}/></a></div><div className="v2-vote-actions"><button className={votes['You (demo)']?.[v.id]===false?'v2-selected-down':''} onClick={()=>setVote(v.id,false)}><ThumbsDown size={16}/> Not interested</button><button className={votes['You (demo)']?.[v.id]===true?'v2-selected-up':''} onClick={()=>setVote(v.id,true)}><ThumbsUp size={16}/> Interested</button></div></div>)}
+   {VENUES.filter(v=>v.name.toLowerCase().includes(filter.toLowerCase())).map(v=><div className="v2-venue" key={v.id}><div className="v2-venue-heading"><div><strong>{v.name}</strong>{cocktailLink(v)}</div><a href={mapSearch(v)} target="_blank" rel="noreferrer" aria-label={'Map for '+v.name}><MapPin size={16}/></a></div><div className="v2-vote-actions"><button className={votes[currentVoter]?.[v.id]===false?'v2-selected-down':''} disabled={voteBusy} onClick={()=>{void setVote(v.id,false)}}><ThumbsDown size={16}/> Not interested</button><button className={votes[currentVoter]?.[v.id]===true?'v2-selected-up':''} disabled={voteBusy} onClick={()=>{void setVote(v.id,true)}}><ThumbsUp size={16}/> Interested</button></div></div>)}
   </section>}
   {tab==='results'&&<section className="v2-content">
-   <span className="v2-kicker">LIVE-STYLE ANALYTICS · DEMO SNAPSHOT</span><h1 className="v2-page-title">Explore results</h1>
+   <span className="v2-kicker">GROUP VOTING ANALYTICS</span><h1 className="v2-page-title">Explore results</h1>
    <div className="v2-grid3"><div className="v2-stat"><strong>{totalVotes}</strong><span>Votes</span></div><div className="v2-stat"><strong>{active}</strong><span>Active</span></div><div className="v2-stat"><strong>{eligible.length}</strong><span>Matches</span></div></div>
    <div className="v2-panel"><h3><SlidersHorizontal size={17}/> Your shortlist rules</h3><div className="v2-presets">{[['strict','Strict'],['balanced','Balanced'],['popular','Popular']].map(([key,label])=><button key={key} className={preset===key?'active':''} onClick={()=>setPresetRule(key)}>{label}</button>)}</div>
     <div className="v2-rule"><label>Maximum dislikes <strong>{rule.maxDislikes===6?'Any':rule.maxDislikes}</strong></label><input type="range" min="0" max="6" value={rule.maxDislikes} onChange={e=>changeRule({maxDislikes:Number(e.target.value)})}/></div>
@@ -233,16 +312,16 @@ export default function V2Preview(){
     <label className="v2-select-label">Rank by <select value={rule.sort} onChange={e=>changeRule({sort:e.target.value as Rule['sort']})}><option value="likes">Most likes</option><option value="net">Likes minus dislikes</option><option value="approval">Approval percentage</option></select></label>
    </div>
    <div className="v2-heading"><h2>{eligible.length} matching venues</h2><button onClick={()=>{setPresetRule('strict')}}><RefreshCcw size={14}/> Reset</button></div>
-   {eligible.map((v,i)=><div key={v.id} className="v2-result"><span className="v2-rank">{i+1}</span><div className="v2-result-main"><strong>{v.name}</strong><small>{v.rated} of 7 demo participants rated</small>{cocktailLink(v)}<div className="v2-meter"><span style={{width:(v.likes/7*100)+'%'}}/></div></div><div className="v2-tallies"><span className="v2-positive"><ThumbsUp size={13}/> {v.likes}</span><span className="v2-negative"><ThumbsDown size={13}/> {v.dislikes}</span></div></div>)}
+   {eligible.map((v,i)=><div key={v.id} className="v2-result"><span className="v2-rank">{i+1}</span><div className="v2-result-main"><strong>{v.name}</strong><small>{v.rated} of {LIVE?joined:7} participants rated</small>{cocktailLink(v)}<div className="v2-meter"><span style={{width:(v.likes/Math.max(1,LIVE?joined:7)*100)+'%'}}/></div></div><div className="v2-tallies"><span className="v2-positive"><ThumbsUp size={13}/> {v.likes}</span><span className="v2-negative"><ThumbsDown size={13}/> {v.dislikes}</span></div></div>)}
    {eligible.length===0&&<p className="v2-empty">Nothing matches these rules. Try reducing the minimum likes or ratings.</p>}
    <div className="v2-panel"><h3><Users size={18}/> Individual voting transparency</h3><label className="v2-select-label">Participant <select value={selectedPerson} onChange={e=>setSelectedPerson(e.target.value)}><option>All participants</option>{voterNames.map(p=><option key={p}>{p}</option>)}</select></label>
-    {selectedPerson!=='All participants'?<div className="v2-person-summary"><strong>{selectedPerson}</strong><span>{Object.keys(votes[selectedPerson]||{}).length} venues rated</span>{VENUES.filter(v=>votes[selectedPerson]?.[v.id]!==undefined).map(v=><div key={v.id} className="v2-mini-vote"><span>{v.name}</span>{votes[selectedPerson]?.[v.id]?<ThumbsUp size={16} className="v2-positive"/>:<ThumbsDown size={16} className="v2-negative"/>}</div>)}</div>:<div className="v2-people">{participation.map(p=><button key={p.name} onClick={()=>setSelectedPerson(p.name)}><strong>{p.name}</strong><small>{p.cast} votes</small></button>)}</div>}
+    {selectedPerson!=='All participants'?<div className="v2-person-summary"><strong>{friendlyName(selectedPerson)}</strong><span>{Object.keys(votes[selectedPerson]||{}).length} venues rated</span>{VENUES.filter(v=>votes[selectedPerson]?.[v.id]!==undefined).map(v=><div key={v.id} className="v2-mini-vote"><span>{v.name}</span>{votes[selectedPerson]?.[v.id]?<ThumbsUp size={16} className="v2-positive"/>:<ThumbsDown size={16} className="v2-negative"/>}</div>)}</div>:<div className="v2-people">{participation.map(p=><button key={p.name} onClick={()=>setSelectedPerson(p.name)}><strong>{friendlyName(p.name)}{LIVE&&p.name!==friendlyName(p.name)?' ('+p.name.slice(-5)+')':''}</strong><small>{p.cast} votes</small></button>)}</div>}
     <button className="v2-outline" onClick={()=>setShowMatrix(!showMatrix)}>{showMatrix?'Hide':'Show'} full voting matrix <ChevronRight size={16}/></button>
     {showMatrix&&<div className="v2-matrix-scroll"><table><thead><tr><th>Venue</th>{voterNames.map(p=><th key={p}>{p}</th>)}</tr></thead><tbody>{VENUES.map(v=><tr key={v.id}><th>{v.name}</th>{voterNames.map(p=><td key={p}>{votes[p]?.[v.id]===true?'✓':votes[p]?.[v.id]===false?'✕':'–'}</td>)}</tr>)}</tbody></table></div>}
    </div>
   </section>}
   {tab==='organiser'&&<section className="v2-content">
-   <span className="v2-kicker">ORGANISER STUDIO · DEMONSTRATION</span><h1 className="v2-page-title">Official shortlist</h1><p className="v2-muted">Review the results, override individual venues and publish a versioned demo snapshot. No admin credentials or database access are used here.</p>
+   <span className="v2-kicker">ORGANISER STUDIO</span><h1 className="v2-page-title">Official shortlist</h1><p className="v2-muted">Review the results, override individual venues and publish a shortlist. {LIVE?'Publishing requires the private organiser code and affects the shared group trail.':'This is a demonstration; no real database records change.'}</p>
    <div className="v2-panel"><h3><SlidersHorizontal size={17}/> Selection rules</h3><p className="v2-muted">Same personal rules as the Results tab. You can change them there.</p><strong>{eligible.length} venues qualify automatically</strong><button className="v2-outline" onClick={()=>showTab('results')}>Change selection rules <ChevronRight size={16}/></button></div>
    <div className="v2-heading"><h2>Manual adjustments</h2><span>{officialIds.length} selected</span></div>
    {counted.slice().sort((a,b)=>rank(a,b,rule.sort)).map(v=>{
@@ -252,24 +331,26 @@ export default function V2Preview(){
     {on&&<div className="v2-reorder"><button disabled={officialIds[0]===v.id} onClick={()=>move(v.id,-1)} aria-label={'Move '+v.name+' up'}><ArrowUp size={15}/></button><button disabled={officialIds[officialIds.length-1]===v.id} onClick={()=>move(v.id,1)} aria-label={'Move '+v.name+' down'}><ArrowDown size={15}/></button></div>}
     </div>;
    })}
+   {LIVE&&<div className="v2-panel"><label className="v2-select-label">Organiser code<input className="v2-input" type="password" autoComplete="off" value={adminCode} onChange={e=>setAdminCode(e.target.value)} placeholder="Enter your organiser code"/></label></div>}
    <div className="v2-panel"><h3><ShieldCheck size={18}/> Publication preview</h3><p className="v2-muted">{officialIds.length} selected venues · {Object.keys(overrides).length} manual overrides</p><ol className="v2-preview-list">{officialIds.map(id=><li key={id}>{VENUES.find(v=>v.id===id)?.name}{overrides[id]&&<small> · Manually included</small>}</li>)}</ol>
     {invalidReasons&&<p className="v2-error">Please enter a reason for every manual adjustment.</p>}
-    <button className="v2-main-button" disabled={invalidReasons||officialIds.length===0} onClick={publish}><Send size={17}/> Publish DEMO snapshot</button>
+    <button className="v2-main-button" disabled={invalidReasons||officialIds.length===0||(LIVE&&!adminCode.trim())} onClick={()=>{void publish()}}><Send size={17}/> {LIVE?'Publish official shortlist':'Publish DEMO snapshot'}</button>
     {draftNotice&&<p role="status" className="v2-success">{draftNotice}</p>}
    </div>
-   {latest&&<div className="v2-panel"><h3><Check size={18}/> Published in this preview · v{latest.version}</h3><p className="v2-muted">{latest.date} · {latest.ids.length} venues, frozen at publication</p><ol className="v2-preview-list">{latest.ids.map(id=><li key={id}>{VENUES.find(v=>v.id===id)?.name}</li>)}</ol><p className="v2-muted">New demo votes do not change this snapshot. Publish again to create a new version.</p></div>}
+   {LIVE&&existingTrail&&<div className="v2-panel"><h3>Current official trail</h3><p className="v2-muted">{existingTrail.created_at}</p><ol className="v2-preview-list">{existingTrail.venue_ids.map(id=><li key={id}>{VENUES.find(v=>v.id===id)?.name||id}</li>)}</ol></div>}
+   {latest&&!LIVE&&<div className="v2-panel"><h3><Check size={18}/> Published in this preview · v{latest.version}</h3><p className="v2-muted">{latest.date} · {latest.ids.length} venues, frozen at publication</p><ol className="v2-preview-list">{latest.ids.map(id=><li key={id}>{VENUES.find(v=>v.id===id)?.name}</li>)}</ol><p className="v2-muted">New demo votes do not change this snapshot. Publish again to create a new version.</p></div>}
    {publications.length>1&&<p className="v2-muted">Demo publication history: {publications.map(p=>'v'+p.version).join(' → ')}</p>}
   </section>}
   {tab==='trail'&&<section className="v2-content"><span className="v2-kicker">GROUP ITINERARY</span><h1 className="v2-page-title">Our cocktail trail</h1>
-   <p className="v2-muted">Preview walking directions using the {latest?'published demo shortlist':'current proposed shortlist'}. Stop order is editable in Organiser Studio and has not been optimised for walking distance.</p>
-   {(latest?.ids||officialIds).slice(0,maxVenues).map((id,i)=>{const v=VENUES.find(x=>x.id===id);return v?<div className="v2-line" key={id}><span className="v2-rank">{i+1}</span><div><strong>{v.name}</strong><small>{v.address||v.area||'Belfast'}</small>{cocktailLink(v)}</div><a href={mapSearch(v)} target="_blank" rel="noreferrer"><MapPin size={17}/></a></div>:null})}
+   <p className="v2-muted">Preview walking directions using the {LIVE&&existingTrail?'latest published group trail':latest?'demo shortlist':'current proposed shortlist'}. Stop order is editable in Organiser Studio and has not been optimised for walking distance.</p>
+   {(officialTrailIds||latest?.ids||officialIds).slice(0,maxVenues).map((id,i)=>{const v=VENUES.find(x=>x.id===id);return v?<div className="v2-line" key={id}><span className="v2-rank">{i+1}</span><div><strong>{v.name}</strong><small>{v.address||v.area||'Belfast'}</small>{cocktailLink(v)}</div><a href={mapSearch(v)} target="_blank" rel="noreferrer"><MapPin size={17}/></a></div>:null})}
    <div className="v2-panel"><label className="v2-select-label">Stops to include <select value={maxVenues} onChange={e=>setMaxVenues(Number(e.target.value))}>{[3,4,5,6,8,12,36].map(x=><option key={x} value={x}>{x} stops maximum</option>)}</select></label>
-    {(()=>{const ids=(latest?.ids||officialIds).slice(0,maxVenues);const stops=ids.map(id=>VENUES.find(v=>v.id===id)).filter((v):v is NonNullable<typeof v>=>!!v);if(stops.length<2)return <p className="v2-muted">Choose at least two venues to view directions.</p>;const places=stops.slice(0,5).map(v=>v.address||v.name+', Belfast');const params=new URLSearchParams({api:'1',origin:places[0],destination:places[places.length-1],travelmode:'walking'});if(places.length>2)params.set('waypoints',places.slice(1,-1).join('|'));return <><a className="v2-main-button" href={'https://www.google.com/maps/dir/?'+params.toString()} target="_blank" rel="noreferrer"><MapPin size={17}/> Open walking directions (first {places.length} stops)</a>{stops.length>5&&<p className="v2-muted">More than five stops selected. Open further route sections separately when implemented.</p>}</>;})()}
+    {(()=>{const ids=(officialTrailIds||latest?.ids||officialIds).slice(0,maxVenues);const stops=ids.map(id=>VENUES.find(v=>v.id===id)).filter((v):v is NonNullable<typeof v>=>!!v);if(stops.length<2)return <p className="v2-muted">Choose at least two venues to view directions.</p>;const places=stops.slice(0,5).map(v=>v.address||v.name+', Belfast');const params=new URLSearchParams({api:'1',origin:places[0],destination:places[places.length-1],travelmode:'walking'});if(places.length>2)params.set('waypoints',places.slice(1,-1).join('|'));return <><a className="v2-main-button" href={'https://www.google.com/maps/dir/?'+params.toString()} target="_blank" rel="noreferrer"><MapPin size={17}/> Open walking directions (first {places.length} stops)</a>{stops.length>5&&<p className="v2-muted">More than five stops selected. Open further route sections separately when implemented.</p>}</>;})()}
    </div>
   </section>}
-  {tab==='ai'&&<section className="v2-content"><span className="v2-kicker">GROUP ANALYSIS · DEMO DATA</span><h1 className="v2-page-title">Ask Cocktail Club</h1>
+  {tab==='ai'&&<section className="v2-content"><span className="v2-kicker">GROUP ANALYSIS · {LIVE?'LIVE VOTES':'DEMO DATA'}</span><h1 className="v2-page-title">Ask Cocktail Club</h1>
    <div className="v2-panel"><h3><Sparkles size={18}/> Your voting assistant</h3>
-    <p className="v2-muted">Ask follow-up questions about votes, objections, cocktails and alternative shortlists. Answers below use fictional demo participants and votes, not the live group.</p>
+    <p className="v2-muted">Ask follow-up questions about votes, objections, cocktails and alternative shortlists. {LIVE?'Answers use the group voting records. The AI only analyses data; it cannot change votes.':'Answers use fictional demo participants and votes, not the live group.'}</p>
     <label className="v2-ai-mode"><input type="checkbox" checked={useGenerative} onChange={e=>setUseGenerative(e.target.checked)}/> Try generative AI when available <small>Requires preview AI Gateway configuration. Instant analysis always works.</small></label>
     <div className="v2-ai-chips">{['Who has not voted yet?','Who disliked Sweet Afton?','What if we allow one dislike?','Compare Sweet Afton and The Northern Whig','What is in the Honey Paloma?','Which venues have zero dislikes?'].map(q=><button className="v2-ai-suggestion" key={q} disabled={aiBusy} onClick={()=>{void ask(q)}}><MessageCircle size={16}/>{q}<ChevronRight size={15}/></button>)}</div>
     <div className="v2-chat-log" aria-live="polite">{conversation.length===0?<p className="v2-muted">Choose a suggestion or ask your own question to begin.</p>:conversation.map((m,i)=><div key={i} className={'v2-chat-bubble '+(m.role==='user'?'user':'assistant')}><small>{m.role==='user'?'You':m.mode==='generative'?'AI assistant':'Instant voting insights'}</small><p>{m.content}</p></div>)}</div>
@@ -277,8 +358,9 @@ export default function V2Preview(){
     <form onSubmit={e=>{e.preventDefault();void ask(question)}} className="v2-ask-form"><input className="v2-input" maxLength={900} value={question} onChange={e=>setQuestion(e.target.value)} placeholder="Ask about votes, bars or cocktails..." aria-label="Ask the voting assistant"/><button type="submit" disabled={aiBusy||!question.trim()} className="v2-main-button">{aiBusy?'Analysing…':'Ask'} <Sparkles size={16}/></button></form>
     {conversation.length>0&&<button className="v2-outline" onClick={()=>{setConversation([]);setAnswer('');setAiNotice('')}}>Clear conversation</button>}
    </div>
-   <p className="v2-muted">Instant calculations come from demo votes in your browser. Generative responses, when enabled, are produced server-side using the supplied snapshot. Neither mode can edit votes or publish to the live app.</p>
+   <p className="v2-muted">{LIVE?'Answers use your group snapshot. Generative AI checks membership server-side and never edits votes.':'Instant calculations come from demo votes in your browser. Neither mode can edit live votes.'}</p>
   </section>}
+  </>}
   <nav className="v2-nav" aria-label="Main navigation">{nav.map(([id,label,Icon])=><button type="button" key={id} className={tab===id?'active':''} onClick={()=>showTab(id)}><Icon size={20}/><span>{label}</span></button>)}</nav>
   {selectedCocktail&&<CocktailDetails venue={selectedCocktail} onClose={()=>setSelectedCocktail(null)}/>}
   <footer className="v2-footer">V2 preview · No production changes · <button onClick={()=>showTab('organiser')}>Organiser Studio</button></footer>
