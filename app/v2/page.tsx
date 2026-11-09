@@ -300,7 +300,7 @@ export default function V2Preview(){
  const showTab=(next:Tab)=>{setTab(next);window.scrollTo({top:0,behavior:'smooth'})};
  const nav:[Tab,string,typeof Heart][]=[['home','Home',Martini],['vote','Vote',Heart],['results','Results',BarChart3],['trail','Trail',Route],['ai','AI',Sparkles]];
  return <main className="v2-shell"><div className="v2-app">
-  <header className="v2-header"><div className="v2-brand"><span className="v2-symbol"><Martini size={24}/></span><div><small>BELFAST COCKTAIL CLUB</small><strong>The social cocktail planner</strong></div></div><span className="v2-preview-pill">V2 TEST</span></header>
+  <header className="v2-header"><div className="v2-brand"><span className="v2-symbol"><Martini size={24}/></span><div><small>BELFAST COCKTAIL CLUB</small><strong>The social cocktail planner</strong></div></div><span className="v2-preview-pill">{LIVE?"V2 LIVE":"V2 TEST"}</span></header>
   <div className="v2-demo-banner"><LockKeyhole size={15}/> {LIVE?(READONLY?'Read-only preview · Real group data · No writes':'Authenticated group · Live shared votes and official trail'):'Isolated demonstration · Fake participant names · No live votes or database writes'}</div>
   {LIVE&&!connected&&<section className="v2-content"><h1 className="v2-page-title">Welcome to the Cocktail Club</h1><p className="v2-muted">Existing members on this device will sign in automatically. New members can join using the original private invitation link.</p>
    {loadError&&<p role="alert" className="v2-error">{loadError}</p>}
@@ -347,7 +347,6 @@ export default function V2Preview(){
   {tab==='organiser'&&<section className="v2-content">
    <span className="v2-kicker">ORGANISER STUDIO</span><h1 className="v2-page-title">Official shortlist</h1><p className="v2-muted">Review the results, override individual venues and publish a shortlist. {LIVE?(READONLY?'Preview only: publishing and voting are disabled.':'Publishing requires the organiser code and updates the shared trail.'):'This is a demonstration; no real database records change.'}</p>
    <div className="v2-panel"><h3><SlidersHorizontal size={17}/> Selection rules</h3><p className="v2-muted">Same personal rules as the Results tab. You can change them there.</p><strong>{eligible.length} venues qualify automatically</strong><button className="v2-outline" onClick={()=>showTab('results')}>Change selection rules <ChevronRight size={16}/></button></div>
-   {LIVE&&!READONLY&&<div className="v2-panel"><h3><LockKeyhole size={18}/> Database recovery export</h3><p className="v2-muted">Download a private copy of members, votes and trails before switching the live homepage. The export contains sensitive session hashes; keep it securely outside Supabase.</p><button className="v2-outline" disabled={!token||!adminCode} onClick={()=>{void downloadBackup()}}>Download private database backup</button></div>}
    <div className="v2-heading"><h2>Manual adjustments</h2><span>{officialIds.length} selected</span></div>
    {counted.slice().sort((a,b)=>rank(a,b,rule.sort)).map(v=>{
     const on=officialIds.includes(v.id),changed=!!overrides[v.id];
@@ -357,6 +356,8 @@ export default function V2Preview(){
     </div>;
    })}
    {LIVE&&!READONLY&&<div className="v2-panel"><label className="v2-select-label">Organiser code<input className="v2-input" type="password" autoComplete="off" value={adminCode} onChange={e=>setAdminCode(e.target.value)} placeholder="Enter your organiser code"/></label></div>}
+   {LIVE&&!READONLY&&<div className="v2-panel"><h3><LockKeyhole size={18}/> Database recovery export</h3><p className="v2-muted">Download a private copy of members, votes and trails before switching the live homepage. The export contains sensitive session hashes; keep it securely outside Supabase.</p><button className="v2-outline" disabled={!token||!adminCode} onClick={()=>{void downloadBackup()}}>Download private database backup</button></div>}
+
    <div className="v2-panel"><h3><ShieldCheck size={18}/> Publication preview</h3><p className="v2-muted">{officialIds.length} selected venues · {Object.keys(overrides).length} manual overrides</p><ol className="v2-preview-list">{officialIds.map(id=><li key={id}>{VENUES.find(v=>v.id===id)?.name}{overrides[id]&&<small> · Manually included</small>}</li>)}</ol>
     {invalidReasons&&<p className="v2-error">Please enter a reason for every manual adjustment.</p>}
     <button className="v2-main-button" disabled={invalidReasons||officialIds.length===0||READONLY||(LIVE&&!adminCode.trim())} onClick={()=>{void publish()}}><Send size={17}/> {LIVE?'Publish official shortlist':'Publish DEMO snapshot'}</button>
