@@ -16,16 +16,17 @@ export async function POST(req:Request){
   const expected=process.env.ADMIN_CODE||'';
   if(!expected||!secureCompare(supplied,expected))return fail('Organiser verification failed',403);
   const client=db();
-  const [members,votes,trails]=await Promise.all([
+  const [members,votes,trails,profiles]=await Promise.all([
    client.from('members').select('id,group_id,name,token_hash,style,wants_food,created_at').eq('group_id',GROUP_ID).order('id'),
    client.from('votes').select('member_id,venue_id,liked,updated_at').order('member_id').order('venue_id'),
-   client.from('trails').select('id,group_id,venue_ids,explanation,generated_by_ai,created_at').eq('group_id',GROUP_ID).order('id')
+   client.from('trails').select('id,group_id,venue_ids,explanation,generated_by_ai,created_at').eq('group_id',GROUP_ID).order('id'),
+   client.from('member_taste_profiles').select('member_id,liked_spirits,avoided_spirits,liked_flavours,avoided_ingredients,updated_at')
   ]);
-  if(members.error||votes.error||trails.error)throw members.error||votes.error||trails.error;
+  if(members.error||votes.error||trails.error||profiles.error)throw members.error||votes.error||trails.error||profiles.error;
   const validIds=new Set((members.data||[]).map(m=>m.id));
-  const exportData={format:'bcc-logical-backup-v1',schemaReference:'supabase/schema.sql',
+  const exportData={format:'bcc-logical-backup-v2',schemaReference:'supabase/schema.sql + supabase/taste_profiles.sql',
    project:'BelfastCocktailWeek',groupId:GROUP_ID,capturedAt:new Date().toISOString(),
-   tables:{members:members.data||[],votes:(votes.data||[]).filter(v=>validIds.has(v.member_id)),trails:trails.data||[]},
+   tables:{members:members.data||[],votes:(votes.data||[]).filter(v=>validIds.has(v.member_id)),trails:trails.data||[],member_taste_profiles:(profiles.data||[]).filter(p=>validIds.has(p.member_id))},
    note:'Contains sensitive member token hashes. Store privately; never share publicly. This exports application rows, not the entire PostgreSQL instance.'};
   const filename='belfast-cocktail-club-'+new Date().toISOString().slice(0,10)+'.json';
   return new Response(JSON.stringify(exportData,null,2),{headers:{
