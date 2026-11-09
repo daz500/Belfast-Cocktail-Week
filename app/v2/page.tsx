@@ -293,7 +293,7 @@ export default function V2Preview(){
  const showTab=(next:Tab)=>{setTab(next);window.scrollTo({top:0,behavior:'smooth'})};
  const nav:[Tab,string,typeof Heart][]=[['home','Home',Martini],['vote','Vote',Heart],['results','Results',BarChart3],['trail','Trail',Route],['ai','AI',Sparkles]];
  return <main className="v2-shell"><div className="v2-app">
-  <header className="v2-header"><div className="v2-brand"><span className="v2-symbol"><Martini size={24}/></span><div><small>BELFAST COCKTAIL CLUB</small><strong>The social cocktail planner</strong></div></div><span className="v2-preview-pill">{LIVE?"V2 LIVE":"V2 TEST"}</span></header>
+  <header className="v2-header"><div className="v2-brand"><span className="v2-symbol"><Martini size={24}/></span><div><small>BELFAST COCKTAIL CLUB</small><strong>Project Prime Edition</strong></div></div></header>
   <div className="v2-demo-banner"><LockKeyhole size={15}/> {LIVE?(READONLY?'Read-only preview · Real group data · No writes':'Authenticated group · Live shared votes and official trail'):'Isolated demonstration · Fake participant names · No live votes or database writes'}</div>
   {LIVE&&!connected&&<section className="v2-content"><h1 className="v2-page-title">Welcome to the Cocktail Club</h1><p className="v2-muted">Existing members on this device will sign in automatically. New members can join using the original private invitation link.</p>
    {loadError&&<p role="alert" className="v2-error">{loadError}</p>}
@@ -307,7 +307,7 @@ export default function V2Preview(){
   {(!LIVE||connected)&&<>
   {loadError&&<div role="alert" className="v2-error" style={{padding:12}}>{loadError}</div>}
   {tab==='home'&&<section className="v2-content">
-   <div className="v2-hero"><span className="v2-kicker">WELCOME TO VERSION 2.0</span><h1>Your people.<br/><em>Your picks.</em><br/>One great night.</h1><p>See the votes, find your favourites and shape the perfect Belfast cocktail trail.</p><button className="v2-main-button" onClick={()=>showTab('results')}>Explore the results <ChevronRight size={18}/></button></div>
+   <div className="v2-hero"><span className="v2-kicker">WELCOME TO THE CLUB</span><h1>Your people.<br/><em>Your picks.</em><br/>One great night.</h1><p>See the votes, find your favourites and shape the perfect Belfast cocktail trail.</p><button className="v2-main-button" onClick={()=>showTab('results')}>Explore the results <ChevronRight size={18}/></button></div>
    <div className="v2-grid3"><div className="v2-stat"><strong>{active}/{LIVE?joined:7}</strong><span>Active voters</span></div><div className="v2-stat"><strong>{totalVotes}</strong><span>Ratings</span></div><div className="v2-stat"><strong>{counted.filter(v=>v.dislikes===0).length}</strong><span>No dislikes</span></div></div>
    <div className="v2-heading"><h2>Group favourites</h2><button onClick={()=>showTab('results')}>View all <ChevronRight size={15}/></button></div>
    {top.map((v,i)=><div className="v2-line" key={v.id}><span className="v2-rank">{String(i+1).padStart(2,'0')}</span><div><strong>{v.name}</strong>{cocktailLink(v)}</div><span className="v2-positive"><Heart size={14}/> {v.likes}</span></div>)}
@@ -383,6 +383,6 @@ export default function V2Preview(){
   </>}
   <nav className="v2-nav" aria-label="Main navigation">{nav.map(([id,label,Icon])=><button type="button" key={id} className={tab===id?'active':''} onClick={()=>showTab(id)}><Icon size={20}/><span>{label}</span></button>)}</nav>
   {selectedCocktail&&<CocktailDetails venue={selectedCocktail} onClose={()=>setSelectedCocktail(null)}/>}
-  <footer className="v2-footer">{LIVE?'Belfast Cocktail Club v2 · Live group data':'V2 demonstration · No production changes'} · <button onClick={()=>showTab('organiser')}>Organiser Studio</button></footer>
+  <footer className="v2-footer">{LIVE?'Project Prime Edition · Live group data':'Project Prime Edition · Demonstration only'} · <button onClick={()=>showTab('organiser')}>Organiser Studio</button></footer>
  </div></main>;
 }
