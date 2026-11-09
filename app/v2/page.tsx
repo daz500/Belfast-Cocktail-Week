@@ -291,7 +291,7 @@ export default function V2Preview(){
   <div className="v2-demo-banner"><LockKeyhole size={15}/> {LIVE?(READONLY?'Read-only preview · Real group data · No writes':'Authenticated group · Live shared votes and official trail'):'Isolated demonstration · Fake participant names · No live votes or database writes'}</div>
   {LIVE&&!connected&&<section className="v2-content"><h1 className="v2-page-title">Welcome to the Cocktail Club</h1><p className="v2-muted">Existing members on this device will sign in automatically. New members can join using the original private invitation link.</p>
    {loadError&&<p role="alert" className="v2-error">{loadError}</p>}
-   {(!token||READONLY)&&<div className="v2-panel">{!READONLY&&<label>Your name<input className="v2-input" maxLength={32} value={joiningName} onChange={e=>setJoiningName(e.target.value)} placeholder="Enter your name"/></label>}
+   {(!token||READONLY)&&<div className="v2-panel">{READONLY&&<label>Group invitation code<input className="v2-input" type="password" autoComplete="off" value={invite} onChange={e=>setInvite(e.target.value)} placeholder="Paste the invitation code"/></label>}{!READONLY&&<label>Your name<input className="v2-input" maxLength={32} value={joiningName} onChange={e=>setJoiningName(e.target.value)} placeholder="Enter your name"/></label>}
     <p className="v2-muted">{invite?'Invitation detected':'Open the invitation link shared in WhatsApp to join.'}</p>
     <button className="v2-main-button" disabled={joining||!invite||(!READONLY&&!joiningName.trim())} onClick={joinGroup}>{joining?'Opening…':READONLY?'View live results (read-only)':'Join group'}</button>
    </div>}
