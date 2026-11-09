@@ -37,3 +37,17 @@
 .v2-taste-chips button{background:#433049;color:#f2daeb;border:1px solid #795772;border-radius:30px;padding:9px 13px;font-size:12px;min-height:38px;cursor:pointer}
 .v2-taste-chips button.active{background:#eeb5d5;color:#29172d;border-color:#f5cae1;font-weight:750}
 .v2-taste-chips button:focus-visible{outline:2px solid #fff;outline-offset:2px}
+
+
+/* Optional, privacy-conscious phone GPS venue recommendations */
+.v2-geo-panel{gap:14px}
+.v2-geo-status{display:flex;align-items:center;gap:7px;color:#b5f5d1;font-size:12px;font-weight:700}
+.v2-geo-status span{margin-left:auto;color:#c5b2c6;font-size:11px;font-weight:400}
+.v2-geo-result{padding:13px;background:#3b2b42;border:1px solid #624664;border-radius:13px;display:grid;gap:11px}
+.v2-geo-result-head{display:flex;gap:10px;align-items:center}
+.v2-geo-result-head>div{flex:1;min-width:0;display:grid;gap:5px}
+.v2-geo-result-head strong{font-size:13px}
+.v2-geo-result-head small{color:#cfb6cb;font-size:11px}
+.v2-geo-distance{font-size:12px;font-weight:800;color:#b5f5d1;white-space:nowrap}
+.v2-geo-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.v2-geo-actions .v2-outline{font-size:11px;padding:8px}
