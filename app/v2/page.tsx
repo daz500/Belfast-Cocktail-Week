@@ -294,7 +294,7 @@ export default function V2Preview(){
  const nav:[Tab,string,typeof Heart][]=[['home','Home',Martini],['vote','Vote',Heart],['results','Results',BarChart3],['trail','Trail',Route],['ai','AI',Sparkles]];
  return <main className="v2-shell"><div className="v2-app">
   <header className="v2-header"><div className="v2-brand"><span className="v2-symbol"><Martini size={24}/></span><div><small>BELFAST COCKTAIL CLUB</small><strong>Project Prime Edition</strong></div></div></header>
-  <div className="v2-demo-banner"><LockKeyhole size={15}/> {LIVE?(READONLY?'Read-only preview · Real group data · No writes':'Authenticated group · Live shared votes and official trail'):'Isolated demonstration · Fake participant names · No live votes or database writes'}</div>
+  {(!LIVE||READONLY)&&<div className="v2-demo-banner"><LockKeyhole size={15}/> {READONLY?'Read-only preview · Real group data · No writes':'Demonstration · Fictional participants and votes · No live changes'}</div>}
   {LIVE&&!connected&&<section className="v2-content"><h1 className="v2-page-title">Welcome to the Cocktail Club</h1><p className="v2-muted">Existing members on this device will sign in automatically. New members can join using the original private invitation link.</p>
    {loadError&&<p role="alert" className="v2-error">{loadError}</p>}
    {(!token||READONLY)&&<div className="v2-panel">{READONLY&&<label>Group invitation code<input className="v2-input" type="password" autoComplete="off" value={invite} onChange={e=>setInvite(e.target.value)} placeholder="Paste the invitation code"/></label>}{!READONLY&&<label>Your name<input className="v2-input" maxLength={32} value={joiningName} onChange={e=>setJoiningName(e.target.value)} placeholder="Enter your name"/></label>}
