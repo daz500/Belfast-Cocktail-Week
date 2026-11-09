@@ -176,6 +176,19 @@ export default function V2Preview(){
   [ids[i],ids[j]]=[ids[j],ids[i]];setOrder(ids);
  };
  const invalidReasons=Object.entries(overrides).some(([,v])=>!v.reason.trim());
+ const downloadBackup=async()=>{
+  if(!LIVE||!token||!adminCode.trim()){setDraftNotice('Enter your organiser code and sign in first.');return;}
+  setDraftNotice('Preparing private export…');
+  try{
+   const response=await fetch('/api/v2/backup',{method:'POST',headers:{'Content-Type':'application/json','x-member-token':token},body:JSON.stringify({adminCode})});
+   if(!response.ok){const err=await response.json();throw new Error(err.error||'Export failed');}
+   const blob=await response.blob();const url=URL.createObjectURL(blob);const anchor=document.createElement('a');
+   anchor.href=url;anchor.download='belfast-cocktail-club-'+new Date().toISOString().slice(0,10)+'.json';
+   document.body.appendChild(anchor);anchor.click();anchor.remove();
+   setTimeout(()=>URL.revokeObjectURL(url),60000);
+   setDraftNotice('Backup download requested. Keep the file somewhere private outside Supabase.');
+  }catch(error){setDraftNotice((error as Error).message)}
+ };
  const publish=async()=>{
   if(!officialIds.length||invalidReasons)return;
   if(LIVE){
@@ -334,6 +347,7 @@ export default function V2Preview(){
   {tab==='organiser'&&<section className="v2-content">
    <span className="v2-kicker">ORGANISER STUDIO</span><h1 className="v2-page-title">Official shortlist</h1><p className="v2-muted">Review the results, override individual venues and publish a shortlist. {LIVE?(READONLY?'Preview only: publishing and voting are disabled.':'Publishing requires the organiser code and updates the shared trail.'):'This is a demonstration; no real database records change.'}</p>
    <div className="v2-panel"><h3><SlidersHorizontal size={17}/> Selection rules</h3><p className="v2-muted">Same personal rules as the Results tab. You can change them there.</p><strong>{eligible.length} venues qualify automatically</strong><button className="v2-outline" onClick={()=>showTab('results')}>Change selection rules <ChevronRight size={16}/></button></div>
+   {LIVE&&!READONLY&&<div className="v2-panel"><h3><LockKeyhole size={18}/> Database recovery export</h3><p className="v2-muted">Download a private copy of members, votes and trails before switching the live homepage. The export contains sensitive session hashes; keep it securely outside Supabase.</p><button className="v2-outline" disabled={!token||!adminCode} onClick={()=>{void downloadBackup()}}>Download private database backup</button></div>}
    <div className="v2-heading"><h2>Manual adjustments</h2><span>{officialIds.length} selected</span></div>
    {counted.slice().sort((a,b)=>rank(a,b,rule.sort)).map(v=>{
     const on=officialIds.includes(v.id),changed=!!overrides[v.id];
