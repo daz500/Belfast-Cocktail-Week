@@ -1,6 +1,7 @@
 import {db,digest,fail,GROUP_ID,secret,secureCompare} from '../../../lib/server';
 export const runtime='nodejs';
 export async function POST(req:Request){try{
+ if(process.env.VERCEL_ENV==='preview')return fail('Preview mode is read-only',403);
  const body=await req.json();const code=String(body.code||'');const expected=process.env.GROUP_INVITE_CODE||'';
  if(!expected||!secureCompare(code,expected))return fail('Invalid invitation link',403);
  const name=String(body.name||'').trim().slice(0,32);if(!name)return fail('Enter a first name');
