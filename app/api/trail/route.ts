@@ -17,10 +17,26 @@ export async function POST(req:Request){try{
    return fail('Choose at least one venue and include each venue only once.');
   }
 
+  let explanation='Selected and ordered by the group organiser.';
+  if(body.rules!==undefined||body.overrides!==undefined){
+   const rules=body.rules as Record<string,unknown>|null;
+   const adjustments=body.overrides as Record<string,unknown>|null;
+   const validNumber=(n:unknown)=>Number.isInteger(n)&&Number(n)>=0&&Number(n)<=36;
+   if(!rules||typeof rules!=='object'||!validNumber(rules.maxDislikes)||!validNumber(rules.minLikes)||!validNumber(rules.minRatings)||!['likes','net','approval'].includes(String(rules.sort))||!adjustments||typeof adjustments!=='object'||Array.isArray(adjustments))return fail('Invalid shortlist rules or adjustments');
+   const reasons:string[]=[];
+   for(const [id,value] of Object.entries(adjustments)){
+    if(!place(id)||!value||typeof value!=='object')return fail('Invalid adjustment');
+    const item=value as Record<string,unknown>;
+    if(!['include','exclude'].includes(String(item.action))||typeof item.reason!=='string'||!item.reason.trim()||item.reason.length>180)return fail('Every manual adjustment must have a reason under 180 characters');
+    reasons.push((item.action==='include'?'Added ':'Excluded ')+place(id)!.name+': '+item.reason.trim());
+   }
+   explanation='Organiser-approved shortlist. Rule: maximum '+rules.maxDislikes+' dislikes, minimum '+rules.minLikes+' likes, minimum '+rules.minRatings+' ratings; ranking '+rules.sort+'. '+(reasons.length?'Manual adjustments: '+reasons.join('; '):'No manual adjustments.') ;
+   explanation=explanation.slice(0,1600);
+  }
   const { data, error } = await db().from('trails').insert({
    group_id: GROUP_ID,
    venue_ids: ids,
-   explanation: 'Selected and ordered by the group organiser.',
+   explanation,
    generated_by_ai: false,
   }).select('venue_ids,explanation,generated_by_ai,created_at').single();
   if (error) throw error;
