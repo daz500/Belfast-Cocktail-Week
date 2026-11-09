@@ -5,6 +5,7 @@ const stopCount=5;
 const place=(id:string)=>VENUES.find(v=>v.id===id);
 function fallback(sorted:Venue[],food:boolean){const result=sorted.slice(0,stopCount);if(food&&!result.some(v=>v.food)){const f=sorted.find(v=>v.food);if(f&&!result.includes(f)){result.pop();result.push(f)}}return result.map(v=>v.id)}
 export async function POST(req:Request){try{
+ if(process.env.VERCEL_ENV==='preview')return fail('Preview mode is read-only',403);
  const member=await memberFromRequest(req);if(!member)return fail('Session expired',401);
  const body=await req.json();const admin=String(body.adminCode||'');const expected=process.env.ADMIN_CODE||'';
  if(!expected||!secureCompare(admin,expected))return fail('Only the organiser can manage the group trail',403);
