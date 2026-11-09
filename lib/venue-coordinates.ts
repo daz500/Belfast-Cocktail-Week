@@ -21,6 +21,52 @@ export const VENUE_POINTS:Record<string,VenuePoint>={
  'sweet-afton':{lat:54.5952,lng:-5.9328,precision:'nearby',source:'https://gb.checkmypostcode.uk/bt27gg'},
 };
 
+/**
+ * Resolve public VENUE postcodes in one batch to approximate postcode centroids.
+ * No visitor coordinates, identities, votes or personal taste data are sent.
+ * Provider: https://postcodes.io/docs/postcode/bulk/
+ * Postcode centroids are NOT entrance locations and should never be treated as
+ * accurate pedestrian route distances.
+ */
+export async function resolveVenuePostcodePoints(
+ venues:readonly Venue[]
+):Promise<Record<string,VenuePoint>>{
+ const missing=venues.filter(venue=>!VENUE_POINTS[venue.id]);
+ const codes=missing.map(venue=>{
+  const result=venue.address?.match(/\bBT\d{1,2}\s?\d[A-Z]{2}\b/i);
+  return result?result[0].toUpperCase().replace(/\s+/g,' '):null;
+ });
+ const postcodes=[...new Set(codes.filter((c):c is string=>!!c))];
+ if(!postcodes.length)return {};
+ const response=await fetch('https://api.postcodes.io/postcodes',{
+  method:'POST',
+  headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({postcodes}),
+  cache:'no-store'
+ });
+ if(!response.ok)throw new Error('Venue postcode lookup unavailable');
+ const data=await response.json() as {
+  status?:number;
+  result?:Array<{query:string;result:null|{latitude:number;longitude:number}}>
+ };
+ if(data.status!==200||!Array.isArray(data.result))throw new Error('Venue postcode lookup returned invalid data');
+ const found=new Map(data.result.filter(x=>x.result).map(x=>[
+  x.query.toUpperCase().replace(/\s+/g,' '),x.result!
+ ]));
+ const points:Record<string,VenuePoint>={};
+ missing.forEach((venue,index)=>{
+  const code=codes[index];const point=code?found.get(code):null;
+  if(!point||!Number.isFinite(point.latitude)||!Number.isFinite(point.longitude))return;
+  // Belfast region guard: reject implausible or mismatched coordinates.
+  if(point.latitude<54.4||point.latitude>54.8||point.longitude< -6.2||point.longitude> -5.5)return;
+  points[venue.id]={
+   lat:point.latitude,lng:point.longitude,precision:'nearby',
+   source:'https://postcodes.io/docs/postcode/bulk/'
+  };
+ });
+ return points;
+}
+
 export function straightLineMetres(lat1:number,lon1:number,lat2:number,lon2:number):number{
  const radians=(v:number)=>v*Math.PI/180;
  const a=radians(lat2-lat1);
