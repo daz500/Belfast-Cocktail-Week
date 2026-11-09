@@ -525,7 +525,7 @@ export default function V2Preview(){
   {tab==='ai'&&<section className="v2-content"><span className="v2-kicker">PERSONALISED COCKTAIL AI · {LIVE?'LIVE VOTES':'DEMO DATA'}</span><h1 className="v2-page-title">Ask Cocktail Club</h1>
    {LIVE&&!READONLY&&<details className="v2-panel v2-taste-panel">
     <summary><Sparkles size={17}/> My cocktail tastes <span>Personalise AI recommendations</span></summary>
-    <p className="v2-muted">Choose what you enjoy and what you'd rather avoid. These choices are private to your member account and don't change your votes.</p>
+    <p className="v2-muted">Choose what you enjoy and what you'd rather avoid. Only you can edit these choices. They aren't shown in group voting results and won't change your votes; they are included in private organiser database backups.</p>
     <div className="v2-taste-group"><strong>Spirits I enjoy</strong>
      <div className="v2-taste-chips">{SPIRIT_OPTIONS.map(spirit=><button key={spirit} type="button" className={tasteProfile.likedSpirits.includes(spirit)?'active':''} aria-pressed={tasteProfile.likedSpirits.includes(spirit)} onClick={()=>toggleTaste('likedSpirits',spirit)}>{spirit}</button>)}</div>
     </div>
