@@ -35,9 +35,9 @@ function demoVotes():Votes{
  });
  return result;
 }
-const initialRule:Rule={maxDislikes:0,minLikes:0,minRatings:0,sort:'likes'};
+const initialRule:Rule={maxDislikes:0,minLikes:1,minRatings:1,sort:'likes'};
 const presetRules:Record<string,Rule>={
- strict:{maxDislikes:0,minLikes:0,minRatings:0,sort:'likes'},
+ strict:{maxDislikes:0,minLikes:1,minRatings:1,sort:'likes'},
  balanced:{maxDislikes:1,minLikes:2,minRatings:0,sort:'net'},
  popular:{maxDislikes:6,minLikes:0,minRatings:0,sort:'likes'}
 };
