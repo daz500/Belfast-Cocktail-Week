@@ -1,5 +1,6 @@
 import {db,fail,GROUP_ID,memberFromRequest} from '../../../../lib/server';
 import {VENUES} from '../../../../lib/venues';
+import {hasPreviewAccess} from '../../../../lib/preview-access';
 
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
@@ -9,7 +10,7 @@ export const dynamic='force-dynamic';
 export async function GET(req:Request){
  try{
   const me=await memberFromRequest(req);
-  if(!me)return fail('Session expired. Open your original group invitation to rejoin.',401);
+  if(!me&&!hasPreviewAccess(req))return fail('Session expired. Open your original group invitation to rejoin.',401);
   const client=db();
   const [members,votes,trails]=await Promise.all([
    client.from('members').select('id,name,style,wants_food').eq('group_id',GROUP_ID),
@@ -30,12 +31,13 @@ export async function GET(req:Request){
    voteMatrix[key][v.venue_id]=v.liked;
   }
   return Response.json({
-   meKey:keyById.get(me.id),
-   me:{name:me.name,id:me.id},
+   meKey:me?keyById.get(me.id):null,
+   me:me?{name:me.name,id:me.id}:null,
    people:[...keyById.entries()].map(([id,key])=>({key,name:people.find(p=>p.id===id)?.name||key})),
    votes:voteMatrix,
    trails:trails.data||[],
    joined:people.length,
+   readOnly:process.env.VERCEL_ENV==='preview',
    capturedAt:new Date().toISOString()
   },{headers:{'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});
  }catch(error){console.error('v2 state',error);return fail('Unable to load the group votes',500)}
