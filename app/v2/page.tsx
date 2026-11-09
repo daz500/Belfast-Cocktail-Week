@@ -227,7 +227,7 @@ export default function V2Preview(){
   }
   if(/who.*(not|hasn.t|haven.t|yet)|no votes|not started|participat|progress|who voted/.test(q)){
    const inactive=participation.filter(p=>p.cast===0);
-   return active+' of '+voterNames.length+' demo participants have voted. '+totalVotes+' venue ratings recorded. Not yet started: '+(inactive.map(p=>p.name).join(', ')||'nobody')+'. Ratings by participant: '+participation.map(p=>p.name+' '+p.cast).join(' · ')+'.';
+   return active+' of '+voterNames.length+(LIVE?' group members':' demo participants')+' have voted. '+totalVotes+' venue ratings recorded. Not yet started: '+(inactive.map(p=>p.name).join(', ')||'nobody')+'. Ratings by participant: '+participation.map(p=>p.name+' '+p.cast).join(' · ')+'.';
   }
   if(/compare|difference|versus| vs /.test(q)){
    const matches=counted.filter(v=>q.includes(v.name.toLowerCase()));
@@ -246,20 +246,20 @@ export default function V2Preview(){
   }
   if(/trail|route|walk|itinerary|five.bar|five bar/.test(q)){
    const stops=officialIds.slice(0,5).map(id=>counted.find(v=>v.id===id)?.name).filter(Boolean);
-   return 'The demo shortlist currently starts with '+stops.join(' → ')+'. Open Trail for walking directions, or Organiser Studio to change the order. These are voting-ranked stops, not an optimised walking route.';
+   return (LIVE?'The proposed shortlist currently starts with ':'The demo shortlist currently starts with ')+stops.join(' → ')+'. Open Trail for walking directions, or Organiser Studio to change the order. These are voting-ranked stops, not an optimised walking route.';
   }
   if(/top|best|favourite|popular|most liked|rank|winning|leader/.test(q)){
    const best=counted.slice().sort((a,b)=>b.likes-a.likes||a.dislikes-b.dislikes).slice(0,8);
-   return 'Most-liked demo venues: '+best.map(format).join('; ')+'. For a no-objection ranking, use the Strict filter in Results.';
+   return (LIVE?'Most-liked group venues: ':'Most-liked demo venues: ')+best.map(format).join('; ')+'. For a no-objection ranking, use the Strict filter in Results.';
   }
   if(/approval|percentage|rate/.test(q)){
    const ranked=counted.filter(v=>v.rated>0).sort((a,b)=>b.likes/b.rated-a.likes/a.rated||b.rated-a.rated).slice(0,7);
    return 'Highest approval among people who voted: '+ranked.map(v=>v.name+' '+Math.round(100*v.likes/v.rated)+'% ('+v.rated+' ratings)').join('; ')+'. A high percentage from only a few ratings is less conclusive.';
   }
   if(/official|publish|shortlist|rule|filter/.test(q)){
-   return 'Your current rules match '+eligible.length+' of 36 venues; '+officialIds.length+' venues are in the proposed shortlist after manual adjustments. The Results filters are personal. Organiser Studio can create a DEMO publication, but cannot modify the real application.';
+   return 'Your current rules match '+eligible.length+' of 36 venues; '+officialIds.length+' venues are in the proposed shortlist after manual adjustments. The Results filters are personal. '+(LIVE?'Only the organiser can publish changes from Organiser Studio.':'Organiser Studio creates a demo publication only.');
   }
-  return 'I can calculate voting progress, individual preferences, who liked or disliked a named venue, cocktail ingredients, venue comparisons, rankings, consensus and what-if scenarios. Try “Who disliked Sweet Afton?”, “What if we allow one dislike?”, or “What is in the Honey Paloma?”. For fully flexible conversation, use the optional AI Gateway mode once it has been configured.';
+  return 'I can calculate voting progress, individual preferences, who liked or disliked a named venue, cocktail ingredients, venue comparisons, rankings, consensus and what-if scenarios. Try “Who disliked Sweet Afton?”, “What if we allow one dislike?”, or “What is in the Honey Paloma?”. The AI assistant may answer more detailed questions when available.';
  };
  const ask=async(input:string)=>{
   const q=input.trim();if(!q||aiBusy)return;
@@ -370,9 +370,9 @@ export default function V2Preview(){
   </section>}
   {tab==='ai'&&<section className="v2-content"><span className="v2-kicker">GROUP ANALYSIS · {LIVE?'LIVE VOTES':'DEMO DATA'}</span><h1 className="v2-page-title">Ask Cocktail Club</h1>
    <div className="v2-panel"><h3><Sparkles size={18}/> Your voting assistant</h3>
-    <p className="v2-muted">Ask follow-up questions about votes, objections, cocktails and alternative shortlists. {LIVE?'Answers use the group voting records. The AI only analyses data; it cannot change votes.':'Answers use fictional demo participants and votes, not the live group.'}</p>
+    <p className="v2-muted">Ask follow-up questions about who likes which bars, group consensus, cocktail ingredients, published trails and alternative shortlists. {LIVE?'Answers use the group voting records. The assistant reads live votes but cannot edit them or publish a trail.':'Answers use fictional demo participants and votes, not the live group.'}</p>
     <p className="v2-muted">Ask naturally — your AI assistant is ready. If the AI service is temporarily unavailable, instant voting insights will answer instead.</p>
-    <div className="v2-ai-chips">{['Who has not voted yet?','Who disliked Sweet Afton?','What if we allow one dislike?','Compare Sweet Afton and The Northern Whig','What is in the Honey Paloma?','Which venues have zero dislikes?'].map(q=><button className="v2-ai-suggestion" key={q} disabled={aiBusy} onClick={()=>{void ask(q)}}><MessageCircle size={16}/>{q}<ChevronRight size={15}/></button>)}</div>
+    <div className="v2-ai-chips">{['Recommend our best five bars and explain why','Who hasn’t voted yet?','Who disliked Sweet Afton?','Which venues do Andrew and Andrea both like?','What changes if we allow one dislike?','What is the currently published trail?'].map(q=><button className="v2-ai-suggestion" key={q} disabled={aiBusy} onClick={()=>{void ask(q)}}><MessageCircle size={16}/>{q}<ChevronRight size={15}/></button>)}</div>
     <div className="v2-chat-log" aria-live="polite">{conversation.length===0?<p className="v2-muted">Choose a suggestion or ask your own question to begin.</p>:conversation.map((m,i)=><div key={i} className={'v2-chat-bubble '+(m.role==='user'?'user':'assistant')}><small>{m.role==='user'?'You':m.mode==='generative'?'AI assistant':'Instant voting insights'}</small><p>{m.content}</p></div>)}</div>
     {aiNotice&&<p role="status" className="v2-muted">{aiNotice}</p>}
     <form onSubmit={e=>{e.preventDefault();void ask(question)}} className="v2-ask-form"><input className="v2-input" maxLength={900} value={question} onChange={e=>setQuestion(e.target.value)} placeholder="Ask about votes, bars or cocktails..." aria-label="Ask the voting assistant"/><button type="submit" disabled={aiBusy||!question.trim()} className="v2-main-button">{aiBusy?'Analysing…':'Ask'} <Sparkles size={16}/></button></form>
