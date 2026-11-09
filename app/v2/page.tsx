@@ -8,6 +8,8 @@ import './v2.css';
 type VoteValue = boolean | undefined;
 type Votes = Record<string, Record<string, VoteValue>>;
 type SavedTrail={venue_ids:string[];explanation:string;created_at:string};
+type PlannerResult={venueIds:string[];explanation:string;mode:'ai'|'fallback';foodIncluded:boolean;warnings:string[];votesAt:number};
+type PlannerPriority='balanced'|'popular'|'consensus';
 const LIVE=process.env.NEXT_PUBLIC_BCC_V2_LIVE==='true';
 const READONLY=process.env.NEXT_PUBLIC_BCC_V2_READONLY==='true';
 type Rule = {maxDislikes:number;minLikes:number;minRatings:number;sort:'likes'|'net'|'approval'};
@@ -91,6 +93,13 @@ export default function V2Preview(){
  const [aiNotice,setAiNotice]=useState('');
  const [showMatrix,setShowMatrix]=useState(false);
  const [maxVenues,setMaxVenues]=useState(6);
+ const [planStops,setPlanStops]=useState(5);
+ const [planArea,setPlanArea]=useState('any');
+ const [planPriority,setPlanPriority]=useState<PlannerPriority>('balanced');
+ const [planFood,setPlanFood]=useState(false);
+ const [planBusy,setPlanBusy]=useState(false);
+ const [planError,setPlanError]=useState('');
+ const [planDraft,setPlanDraft]=useState<PlannerResult|null>(null);
  const voterNames=LIVE?peopleLive.map(p=>p.key):[...people,'You (demo)'];
  const currentVoter=LIVE?meKey:'You (demo)';
  const friendlyName=(key:string)=>LIVE?(peopleLive.find(p=>p.key===key)?.name||key):key;
@@ -173,6 +182,57 @@ export default function V2Preview(){
  const move=(id:string,dir:number)=>{
   const ids=[...officialIds],i=ids.indexOf(id),j=i+dir;if(i<0||j<0||j>=ids.length)return;
   [ids[i],ids[j]]=[ids[j],ids[i]];setOrder(ids);
+ };
+ const planRoute=async()=>{
+  if(planBusy)return;
+  setPlanBusy(true);setPlanError('');
+  try{
+   if(!LIVE){throw new Error('Real group voting is required to generate an AI route. Open the live version.');}
+   const response=await fetch('/api/v2/plan',{method:'POST',headers:{
+    'Content-Type':'application/json','x-member-token':token
+   },body:JSON.stringify({stops:planStops,startArea:planArea,priority:planPriority,food:planFood})});
+   const data=await response.json();
+   if(!response.ok)throw new Error(data.error||'Unable to generate a route');
+   if(!Array.isArray(data.venueIds)||data.venueIds.length!==planStops)throw new Error('The route was incomplete');
+   setPlanDraft(data as PlannerResult);
+  }catch(e){setPlanError((e as Error).message)}finally{setPlanBusy(false)}
+ };
+ const movePlannedStop=(index:number,delta:number)=>{
+  setPlanDraft(prev=>{
+   if(!prev)return prev;
+   const ids=[...prev.venueIds],j=index+delta;
+   if(j<0||j>=ids.length)return prev;
+   [ids[index],ids[j]]=[ids[j],ids[index]];
+   return {...prev,venueIds:ids};
+  });
+ };
+ const publishPlanned=async()=>{
+  if(!planDraft||!token||!adminCode.trim()||READONLY)return;
+  if(!window.confirm('Publish these '+planDraft.venueIds.length+' stops as the official group trail? This adds a new trail version.'))return;
+  setPlanBusy(true);setPlanError('');
+  try{
+   const r=await fetch('/api/trail',{method:'POST',headers:{'Content-Type':'application/json','x-member-token':token},
+    body:JSON.stringify({action:'publish',adminCode,venueIds:planDraft.venueIds})});
+   const data=await r.json();
+   if(!r.ok)throw new Error(data.error||'Unable to publish the planned route');
+   await refreshLive(token);
+   setDraftNotice('Your planned trail is now published for the group.');
+   setPlanDraft(null);
+  }catch(e){setPlanError((e as Error).message)}finally{setPlanBusy(false)}
+ };
+ const plannedDirections=(ids:string[])=>{
+  const points=ids.map(id=>VENUES.find(v=>v.id===id)).filter((v):v is Venue=>!!v);
+  const routes:{label:string;url:string}[]=[];
+  for(let i=0;i<points.length-1;i+=4){
+   const section=points.slice(i,i+5);
+   if(section.length<2)break;
+   const places=section.map(v=>v.address||v.name+', Belfast');
+   const params=new URLSearchParams({api:'1',origin:places[0],destination:places[places.length-1],travelmode:'walking'});
+   if(places.length>2)params.set('waypoints',places.slice(1,-1).join('|'));
+   routes.push({label:points.length<=5?'View walking directions':'Walking directions · Stops '+(i+1)+'–'+(i+section.length),
+    url:'https://www.google.com/maps/dir/?'+params.toString()});
+  }
+  return routes;
  };
  const invalidReasons=Object.entries(overrides).some(([,v])=>!v.reason.trim());
  const downloadBackup=async()=>{
@@ -348,6 +408,16 @@ export default function V2Preview(){
     {on&&<div className="v2-reorder"><button disabled={officialIds[0]===v.id} onClick={()=>move(v.id,-1)} aria-label={'Move '+v.name+' up'}><ArrowUp size={15}/></button><button disabled={officialIds[officialIds.length-1]===v.id} onClick={()=>move(v.id,1)} aria-label={'Move '+v.name+' down'}><ArrowDown size={15}/></button></div>}
     </div>;
    })}
+   {planDraft&&LIVE&&<div className="v2-panel">
+    <h3><Route size={18}/> Review AI route proposal</h3>
+    <p className="v2-muted">This is a separate {planDraft.venueIds.length}-stop draft. It does not overwrite your voting rules or existing published trail unless you explicitly publish it.</p>
+    <ol className="v2-preview-list">{planDraft.venueIds.map(id=><li key={id}>{VENUES.find(v=>v.id===id)?.name||id}</li>)}</ol>
+    <p className="v2-muted">{planDraft.explanation}</p>
+    <button className="v2-outline" onClick={()=>showTab('trail')}>Review route and reorder stops</button>
+    <button className="v2-main-button" disabled={READONLY||planBusy||!adminCode.trim()} onClick={()=>{void publishPlanned()}}><Send size={16}/> Publish this route as official trail</button>
+    {!adminCode.trim()&&<p className="v2-muted">Enter the organiser code below to enable publication.</p>}
+    {planError&&<p className="v2-error" role="alert">{planError}</p>}
+   </div>}
    {LIVE&&!READONLY&&<div className="v2-panel"><label className="v2-select-label">Organiser code<input className="v2-input" type="password" autoComplete="off" value={adminCode} onChange={e=>setAdminCode(e.target.value)} placeholder="Enter your organiser code"/></label></div>}
    {LIVE&&!READONLY&&<div className="v2-panel"><h3><LockKeyhole size={18}/> Database recovery export</h3><p className="v2-muted">Download a private copy of members, votes and trails before switching the live homepage. The export contains sensitive session hashes; keep it securely outside Supabase.</p><p className="v2-muted" role="status">{!token?'Member session not detected. Open v2 in the same browser where you joined the original group.':!adminCode.trim()?'Enter your organiser code in the field immediately above to enable the download.':'Member session and organiser code entered. You can now download the backup.'}</p><button className="v2-outline" disabled={!token||!adminCode.trim()} onClick={()=>{void downloadBackup()}}>Download private database backup</button></div>}
 
@@ -362,6 +432,44 @@ export default function V2Preview(){
    {publications.length>1&&<p className="v2-muted">Demo publication history: {publications.map(p=>'v'+p.version).join(' → ')}</p>}
   </section>}
   {tab==='trail'&&<section className="v2-content"><span className="v2-kicker">GROUP ITINERARY</span><h1 className="v2-page-title">Our cocktail trail</h1>
+   {LIVE&&<div className="v2-panel">
+    <h3><Sparkles size={18}/> AI-assisted route planner</h3>
+    <p className="v2-muted">Build a new private proposal from real group votes, with neighbourhood grouping and a possible food stop. Nothing is published automatically.</p>
+    <div className="v2-rule"><label>Number of stops <strong>{planStops}</strong></label><select className="v2-input" value={planStops} onChange={e=>setPlanStops(Number(e.target.value))}>{[3,4,5,6].map(n=><option key={n} value={n}>{n} stops</option>)}</select></div>
+    <label className="v2-select-label">Preferred starting area
+     <select value={planArea} onChange={e=>setPlanArea(e.target.value)}>
+      {[['any','No preference'],['Linen Quarter','Linen Quarter'],['Cathedral Quarter','Cathedral Quarter'],['City centre','City centre'],['Weavers Cross','Weavers Cross']].map(([id,name])=><option key={id} value={id}>{name}</option>)}
+     </select>
+    </label>
+    <label className="v2-select-label">What matters most?
+     <select value={planPriority} onChange={e=>setPlanPriority(e.target.value as PlannerPriority)}>
+      <option value="balanced">Balanced votes and objections</option>
+      <option value="popular">Most popular venues</option>
+      <option value="consensus">Fewest objections</option>
+     </select>
+    </label>
+    <label className="v2-ai-mode"><input type="checkbox" checked={planFood} onChange={e=>setPlanFood(e.target.checked)}/> Include a food venue where possible</label>
+    <button className="v2-main-button" disabled={planBusy} onClick={()=>{void planRoute()}}><Sparkles size={17}/>{planBusy?'Planning your route…':'Suggest a walking trail'}</button>
+    {planError&&<p className="v2-error" role="alert">{planError}</p>}
+    {planDraft&&<div className="v2-person-summary">
+     <h3><Route size={17}/> Private proposed trail</h3>
+     <p className="v2-muted">{planDraft.mode==='ai'?'AI-assisted suggestion':'Vote-ranked suggestion (AI temporarily unavailable)'} · Based on {planDraft.votesAt} members</p>
+     <p className="v2-muted">{planDraft.explanation}</p>
+     {planDraft.venueIds.map((id,i)=>{
+      const venue=VENUES.find(v=>v.id===id);
+      if(!venue)return null;
+      const tally=scores[id];
+      return <div className="v2-line" key={id}>
+       <span className="v2-rank">{i+1}</span>
+       <div><strong>{venue.name}</strong><small>{venue.address||venue.area||'Location requires checking'} · {tally?.likes||0} likes / {tally?.dislikes||0} dislikes</small>{cocktailLink(venue)}</div>
+       <div className="v2-reorder"><button aria-label={'Move '+venue.name+' earlier'} disabled={i===0} onClick={()=>movePlannedStop(i,-1)}><ArrowUp size={15}/></button><button aria-label={'Move '+venue.name+' later'} disabled={i===planDraft.venueIds.length-1} onClick={()=>movePlannedStop(i,1)}><ArrowDown size={15}/></button></div>
+      </div>;
+     })}
+     {planDraft.warnings.map((warning,i)=><p className="v2-muted" key={i}>{warning}</p>)}
+     {plannedDirections(planDraft.venueIds).map(link=><a className="v2-outline" key={link.url} href={link.url} target="_blank" rel="noopener noreferrer"><MapPin size={16}/>{link.label}</a>)}
+     <button className="v2-outline" onClick={()=>showTab('organiser')}><ShieldCheck size={16}/> Review for organiser publication</button>
+    </div>}
+   </div>}
    <p className="v2-muted">Preview walking directions using the {LIVE&&existingTrail?'latest published group trail':latest?'demo shortlist':'current proposed shortlist'}. Stop order is editable in Organiser Studio and has not been optimised for walking distance.</p>
    {(officialTrailIds||latest?.ids||officialIds).slice(0,maxVenues).map((id,i)=>{const v=VENUES.find(x=>x.id===id);return v?<div className="v2-line" key={id}><span className="v2-rank">{i+1}</span><div><strong>{v.name}</strong><small>{v.address||v.area||'Belfast'}</small>{cocktailLink(v)}</div><a href={mapSearch(v)} target="_blank" rel="noreferrer"><MapPin size={17}/></a></div>:null})}
    <div className="v2-panel"><label className="v2-select-label">Stops to include <select value={maxVenues} onChange={e=>setMaxVenues(Number(e.target.value))}>{[3,4,5,6,8,12,36].map(x=><option key={x} value={x}>{x} stops maximum</option>)}</select></label>
