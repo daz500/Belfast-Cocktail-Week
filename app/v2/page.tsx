@@ -1,8 +1,8 @@
 'use client';
 
-import {useMemo,useState} from 'react';
+import {useEffect,useMemo,useRef,useState} from 'react';
 import {ArrowDown,ArrowUp,BarChart3,Check,ChevronRight,Heart,LockKeyhole,MapPin,Martini,MessageCircle,RefreshCcw,Route,Send,ShieldCheck,SlidersHorizontal,Sparkles,ThumbsDown,ThumbsUp,Users,Vote,X} from 'lucide-react';
-import {VENUES,mapSearch} from '../../lib/venues';
+import {COCKTAIL_GUIDE_URL,VENUES,mapSearch,Venue} from '../../lib/venues';
 import './v2.css';
 
 type VoteValue = boolean | undefined;
@@ -43,8 +43,23 @@ function rank(a:{likes:number;dislikes:number},b:{likes:number;dislikes:number},
  if(sort==='approval')return b.likes/Math.max(1,b.likes+b.dislikes)-a.likes/Math.max(1,a.likes+a.dislikes)||b.likes-a.likes;
  return b.likes-a.likes||a.dislikes-b.dislikes;
 }
+function CocktailDetails({venue,onClose}:{venue:Venue;onClose:()=>void}){
+ const dialog=useRef<HTMLDialogElement>(null);
+ useEffect(()=>{dialog.current?.showModal();},[]);
+ return <dialog ref={dialog} className="v2-cocktail-dialog" onClose={onClose} aria-labelledby="v2-cocktail-title">
+  <div className="v2-cocktail-head">
+   <div><span className="v2-kicker">{venue.name}</span><h2 id="v2-cocktail-title">{venue.cocktail}</h2></div>
+   <button type="button" aria-label="Close cocktail details" onClick={()=>dialog.current?.close()}><X size={20}/></button>
+  </div>
+  {venue.cocktailPhoto&&<img className="v2-cocktail-photo" src={venue.cocktailPhoto} alt={venue.cocktail+' cocktail served at '+venue.name}/>}
+  <h3>What's in this cocktail?</h3>
+  <ul className="v2-ingredients">{venue.cocktailIngredients?.map((ingredient,i)=><li key={i}>{ingredient}</li>)}</ul>
+  <a href={COCKTAIL_GUIDE_URL} target="_blank" rel="noopener noreferrer">View official Belfast Cocktail Week guide</a>
+ </dialog>;
+}
 export default function V2Preview(){
  const [tab,setTab]=useState<Tab>('home');
+ const [selectedCocktail,setSelectedCocktail]=useState<Venue|null>(null);
  const [votes,setVotes]=useState<Votes>(demoVotes);
  const [rule,setRule]=useState<Rule>(initialRule);
  const [preset,setPreset]=useState('strict');
@@ -114,6 +129,7 @@ export default function V2Preview(){
   setAnswer(response);
  };
  const top=counted.slice().sort((a,b)=>b.likes-a.likes).slice(0,5);
+ const cocktailLink=(v:Venue)=> <button type="button" className="v2-cocktail-link" onClick={()=>setSelectedCocktail(v)} aria-label={'View photo and ingredients for '+v.cocktail+' at '+v.name}><Martini size={13}/>{v.cocktail||'See cocktail'}</button>;
  const showTab=(next:Tab)=>{setTab(next);window.scrollTo({top:0,behavior:'smooth'})};
  const nav:[Tab,string,typeof Heart][]=[['home','Home',Martini],['vote','Vote',Heart],['results','Results',BarChart3],['trail','Trail',Route],['ai','AI',Sparkles]];
  return <main className="v2-shell"><div className="v2-app">
@@ -123,14 +139,14 @@ export default function V2Preview(){
    <div className="v2-hero"><span className="v2-kicker">WELCOME TO VERSION 2.0</span><h1>Your people.<br/><em>Your picks.</em><br/>One great night.</h1><p>See the votes, find your favourites and shape the perfect Belfast cocktail trail.</p><button className="v2-main-button" onClick={()=>showTab('results')}>Explore the results <ChevronRight size={18}/></button></div>
    <div className="v2-grid3"><div className="v2-stat"><strong>{active}/7</strong><span>Active demo voters</span></div><div className="v2-stat"><strong>{totalVotes}</strong><span>Demo ratings</span></div><div className="v2-stat"><strong>{counted.filter(v=>v.dislikes===0).length}</strong><span>No dislikes</span></div></div>
    <div className="v2-heading"><h2>Group favourites</h2><button onClick={()=>showTab('results')}>View all <ChevronRight size={15}/></button></div>
-   {top.map((v,i)=><div className="v2-line" key={v.id}><span className="v2-rank">{String(i+1).padStart(2,'0')}</span><div><strong>{v.name}</strong><small>{v.cocktail}</small></div><span className="v2-positive"><Heart size={14}/> {v.likes}</span></div>)}
+   {top.map((v,i)=><div className="v2-line" key={v.id}><span className="v2-rank">{String(i+1).padStart(2,'0')}</span><div><strong>{v.name}</strong>{cocktailLink(v)}</div><span className="v2-positive"><Heart size={14}/> {v.likes}</span></div>)}
    <button className="v2-outline" onClick={()=>showTab('organiser')}><ShieldCheck size={17}/> Open organiser studio (demo)</button>
   </section>}
   {tab==='vote'&&<section className="v2-content">
    <span className="v2-kicker">TRY THE VOTING EXPERIENCE</span><h1 className="v2-page-title">Make your picks</h1>
    <p className="v2-muted">Votes below belong to the fictional “You (demo)” account. They change this preview only.</p>
    <input className="v2-input" placeholder="Search 36 venues..." value={filter} onChange={e=>setFilter(e.target.value)}/>
-   {VENUES.filter(v=>v.name.toLowerCase().includes(filter.toLowerCase())).map(v=><div className="v2-venue" key={v.id}><div className="v2-venue-heading"><div><strong>{v.name}</strong><small>{v.cocktail||'Cocktail Week venue'}</small></div><a href={mapSearch(v)} target="_blank" rel="noreferrer" aria-label={'Map for '+v.name}><MapPin size={16}/></a></div><div className="v2-vote-actions"><button className={votes['You (demo)']?.[v.id]===false?'v2-selected-down':''} onClick={()=>setVote(v.id,false)}><ThumbsDown size={16}/> Not interested</button><button className={votes['You (demo)']?.[v.id]===true?'v2-selected-up':''} onClick={()=>setVote(v.id,true)}><ThumbsUp size={16}/> Interested</button></div></div>)}
+   {VENUES.filter(v=>v.name.toLowerCase().includes(filter.toLowerCase())).map(v=><div className="v2-venue" key={v.id}><div className="v2-venue-heading"><div><strong>{v.name}</strong>{cocktailLink(v)}</div><a href={mapSearch(v)} target="_blank" rel="noreferrer" aria-label={'Map for '+v.name}><MapPin size={16}/></a></div><div className="v2-vote-actions"><button className={votes['You (demo)']?.[v.id]===false?'v2-selected-down':''} onClick={()=>setVote(v.id,false)}><ThumbsDown size={16}/> Not interested</button><button className={votes['You (demo)']?.[v.id]===true?'v2-selected-up':''} onClick={()=>setVote(v.id,true)}><ThumbsUp size={16}/> Interested</button></div></div>)}
   </section>}
   {tab==='results'&&<section className="v2-content">
    <span className="v2-kicker">LIVE-STYLE ANALYTICS · DEMO SNAPSHOT</span><h1 className="v2-page-title">Explore results</h1>
@@ -142,7 +158,7 @@ export default function V2Preview(){
     <label className="v2-select-label">Rank by <select value={rule.sort} onChange={e=>changeRule({sort:e.target.value as Rule['sort']})}><option value="likes">Most likes</option><option value="net">Likes minus dislikes</option><option value="approval">Approval percentage</option></select></label>
    </div>
    <div className="v2-heading"><h2>{eligible.length} matching venues</h2><button onClick={()=>{setPresetRule('strict')}}><RefreshCcw size={14}/> Reset</button></div>
-   {eligible.map((v,i)=><div key={v.id} className="v2-result"><span className="v2-rank">{i+1}</span><div className="v2-result-main"><strong>{v.name}</strong><small>{v.rated} of 7 demo participants rated</small><div className="v2-meter"><span style={{width:(v.likes/7*100)+'%'}}/></div></div><div className="v2-tallies"><span className="v2-positive"><ThumbsUp size={13}/> {v.likes}</span><span className="v2-negative"><ThumbsDown size={13}/> {v.dislikes}</span></div></div>)}
+   {eligible.map((v,i)=><div key={v.id} className="v2-result"><span className="v2-rank">{i+1}</span><div className="v2-result-main"><strong>{v.name}</strong><small>{v.rated} of 7 demo participants rated</small>{cocktailLink(v)}<div className="v2-meter"><span style={{width:(v.likes/7*100)+'%'}}/></div></div><div className="v2-tallies"><span className="v2-positive"><ThumbsUp size={13}/> {v.likes}</span><span className="v2-negative"><ThumbsDown size={13}/> {v.dislikes}</span></div></div>)}
    {eligible.length===0&&<p className="v2-empty">Nothing matches these rules. Try reducing the minimum likes or ratings.</p>}
    <div className="v2-panel"><h3><Users size={18}/> Individual voting transparency</h3><label className="v2-select-label">Participant <select value={selectedPerson} onChange={e=>setSelectedPerson(e.target.value)}><option>All participants</option>{voterNames.map(p=><option key={p}>{p}</option>)}</select></label>
     {selectedPerson!=='All participants'?<div className="v2-person-summary"><strong>{selectedPerson}</strong><span>{Object.keys(votes[selectedPerson]||{}).length} venues rated</span>{VENUES.filter(v=>votes[selectedPerson]?.[v.id]!==undefined).map(v=><div key={v.id} className="v2-mini-vote"><span>{v.name}</span>{votes[selectedPerson]?.[v.id]?<ThumbsUp size={16} className="v2-positive"/>:<ThumbsDown size={16} className="v2-negative"/>}</div>)}</div>:<div className="v2-people">{participation.map(p=><button key={p.name} onClick={()=>setSelectedPerson(p.name)}><strong>{p.name}</strong><small>{p.cast} votes</small></button>)}</div>}
@@ -171,7 +187,7 @@ export default function V2Preview(){
   </section>}
   {tab==='trail'&&<section className="v2-content"><span className="v2-kicker">GROUP ITINERARY</span><h1 className="v2-page-title">Our cocktail trail</h1>
    <p className="v2-muted">Preview walking directions using the {latest?'published demo shortlist':'current proposed shortlist'}. Stop order is editable in Organiser Studio and has not been optimised for walking distance.</p>
-   {(latest?.ids||officialIds).slice(0,maxVenues).map((id,i)=>{const v=VENUES.find(x=>x.id===id);return v?<div className="v2-line" key={id}><span className="v2-rank">{i+1}</span><div><strong>{v.name}</strong><small>{v.address||v.area||'Belfast'}</small></div><a href={mapSearch(v)} target="_blank" rel="noreferrer"><MapPin size={17}/></a></div>:null})}
+   {(latest?.ids||officialIds).slice(0,maxVenues).map((id,i)=>{const v=VENUES.find(x=>x.id===id);return v?<div className="v2-line" key={id}><span className="v2-rank">{i+1}</span><div><strong>{v.name}</strong><small>{v.address||v.area||'Belfast'}</small>{cocktailLink(v)}</div><a href={mapSearch(v)} target="_blank" rel="noreferrer"><MapPin size={17}/></a></div>:null})}
    <div className="v2-panel"><label className="v2-select-label">Stops to include <select value={maxVenues} onChange={e=>setMaxVenues(Number(e.target.value))}>{[3,4,5,6,8,12,36].map(x=><option key={x} value={x}>{x} stops maximum</option>)}</select></label>
     {(()=>{const ids=(latest?.ids||officialIds).slice(0,maxVenues);const stops=ids.map(id=>VENUES.find(v=>v.id===id)).filter((v):v is NonNullable<typeof v>=>!!v);if(stops.length<2)return <p className="v2-muted">Choose at least two venues to view directions.</p>;const places=stops.slice(0,5).map(v=>v.address||v.name+', Belfast');const params=new URLSearchParams({api:'1',origin:places[0],destination:places[places.length-1],travelmode:'walking'});if(places.length>2)params.set('waypoints',places.slice(1,-1).join('|'));return <><a className="v2-main-button" href={'https://www.google.com/maps/dir/?'+params.toString()} target="_blank" rel="noreferrer"><MapPin size={17}/> Open walking directions (first {places.length} stops)</a>{stops.length>5&&<p className="v2-muted">More than five stops selected. Open further route sections separately when implemented.</p>}</>;})()}
    </div>
@@ -185,6 +201,7 @@ export default function V2Preview(){
    <p className="v2-muted">A real AI assistant in v2.2 will use a secured server-side model integration and the same rules engine as the dashboard.</p>
   </section>}
   <nav className="v2-nav" aria-label="Main navigation">{nav.map(([id,label,Icon])=><button type="button" key={id} className={tab===id?'active':''} onClick={()=>showTab(id)}><Icon size={20}/><span>{label}</span></button>)}</nav>
+  {selectedCocktail&&<CocktailDetails venue={selectedCocktail} onClose={()=>setSelectedCocktail(null)}/>}
   <footer className="v2-footer">V2 preview · No production changes · <button onClick={()=>showTab('organiser')}>Organiser Studio</button></footer>
  </div></main>;
 }
