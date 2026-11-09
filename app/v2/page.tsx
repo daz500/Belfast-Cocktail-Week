@@ -87,7 +87,6 @@ export default function V2Preview(){
  const [question,setQuestion]=useState('');
  const [answer,setAnswer]=useState('');
  const [conversation,setConversation]=useState<Array<{role:'user'|'assistant';content:string;mode?:string}>>([]);
- const [useGenerative,setUseGenerative]=useState(false);
  const [aiBusy,setAiBusy]=useState(false);
  const [aiNotice,setAiNotice]=useState('');
  const [showMatrix,setShowMatrix]=useState(false);
@@ -268,12 +267,6 @@ export default function V2Preview(){
   setAiNotice('');
   const prior=conversation.slice(-6).map(m=>({role:m.role,content:m.content}));
   setConversation(old=>[...old,{role:'user',content:q}]);
-  if(!useGenerative){
-   const result=instantAnswer(q);
-   setAnswer(result);
-   setConversation(old=>[...old,{role:'assistant',content:result,mode:'instant'}]);
-   return;
-  }
   setAiBusy(true);
   try{
    const response=await fetch('/api/v2/chat',{method:'POST',headers:{'Content-Type':'application/json',...(LIVE?{'x-member-token':token}:{})},
@@ -378,7 +371,7 @@ export default function V2Preview(){
   {tab==='ai'&&<section className="v2-content"><span className="v2-kicker">GROUP ANALYSIS · {LIVE?'LIVE VOTES':'DEMO DATA'}</span><h1 className="v2-page-title">Ask Cocktail Club</h1>
    <div className="v2-panel"><h3><Sparkles size={18}/> Your voting assistant</h3>
     <p className="v2-muted">Ask follow-up questions about votes, objections, cocktails and alternative shortlists. {LIVE?'Answers use the group voting records. The AI only analyses data; it cannot change votes.':'Answers use fictional demo participants and votes, not the live group.'}</p>
-    <label className="v2-ai-mode"><input type="checkbox" checked={useGenerative} onChange={e=>setUseGenerative(e.target.checked)}/> Try generative AI when available <small>Requires preview AI Gateway configuration. Instant analysis always works.</small></label>
+    <p className="v2-muted">Ask naturally — your AI assistant is ready. If the AI service is temporarily unavailable, instant voting insights will answer instead.</p>
     <div className="v2-ai-chips">{['Who has not voted yet?','Who disliked Sweet Afton?','What if we allow one dislike?','Compare Sweet Afton and The Northern Whig','What is in the Honey Paloma?','Which venues have zero dislikes?'].map(q=><button className="v2-ai-suggestion" key={q} disabled={aiBusy} onClick={()=>{void ask(q)}}><MessageCircle size={16}/>{q}<ChevronRight size={15}/></button>)}</div>
     <div className="v2-chat-log" aria-live="polite">{conversation.length===0?<p className="v2-muted">Choose a suggestion or ask your own question to begin.</p>:conversation.map((m,i)=><div key={i} className={'v2-chat-bubble '+(m.role==='user'?'user':'assistant')}><small>{m.role==='user'?'You':m.mode==='generative'?'AI assistant':'Instant voting insights'}</small><p>{m.content}</p></div>)}</div>
     {aiNotice&&<p role="status" className="v2-muted">{aiNotice}</p>}
@@ -390,6 +383,6 @@ export default function V2Preview(){
   </>}
   <nav className="v2-nav" aria-label="Main navigation">{nav.map(([id,label,Icon])=><button type="button" key={id} className={tab===id?'active':''} onClick={()=>showTab(id)}><Icon size={20}/><span>{label}</span></button>)}</nav>
   {selectedCocktail&&<CocktailDetails venue={selectedCocktail} onClose={()=>setSelectedCocktail(null)}/>}
-  <footer className="v2-footer">V2 preview · No production changes · <button onClick={()=>showTab('organiser')}>Organiser Studio</button></footer>
+  <footer className="v2-footer">{LIVE?'Belfast Cocktail Club v2 · Live group data':'V2 demonstration · No production changes'} · <button onClick={()=>showTab('organiser')}>Organiser Studio</button></footer>
  </div></main>;
 }
