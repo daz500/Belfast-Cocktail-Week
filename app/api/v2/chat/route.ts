@@ -3,6 +3,18 @@ import {NextRequest} from 'next/server';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+// Best-effort per-instance rate limiting; Vercel's free-tier credit and rate limits
+// provide the account-level safeguard. Never rely on this memory map as a global cap.
+const recentRequests = new Map<string,number[]>();
+function tooManyRequests(identity:string){
+ const now=Date.now();
+ if(recentRequests.size>500)recentRequests.clear();
+ const window=(recentRequests.get(identity)||[]).filter(t=>t>now-3600_000);
+ if(window.length>=30)return true;
+ window.push(now);recentRequests.set(identity,window);
+ return false;
+}
+
 type ChatMessage = {role:'user'|'assistant';content:string};
 type VenueData = {name:string;cocktail:string;likes:number;dislikes:number};
 type MemberData = {name:string;ratings:number;likes:number;dislikes:number};
@@ -12,6 +24,12 @@ type MemberData = {name:string;ratings:number;likes:number;dislikes:number};
  * Never receives Supabase credentials and cannot call voting or publishing APIs.
  */
 export async function POST(req:NextRequest){
+ if(process.env.VERCEL_ENV!=='preview'||process.env.VERCEL_GIT_COMMIT_REF!=='feature/v2-preview'){
+  return Response.json({error:'AI is restricted to the v2 preview branch.'},{status:403});
+ }
+ if(tooManyRequests((req.headers.get('x-forwarded-for')||'unknown').split(',')[0].trim())){
+  return Response.json({error:'AI request limit reached for this browser network (30 requests/hour). Instant insights are still available.'},{status:429});
+ }
  if(process.env.BCC_V2_AI_ENABLED!=='true'){
   return Response.json({error:'Generative AI is not enabled in this preview. The local insights assistant remains available.'},{status:503});
  }
