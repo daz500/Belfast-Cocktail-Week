@@ -71,6 +71,10 @@ export default function V2Preview(){
  const [draftNotice,setDraftNotice]=useState('');
  const [question,setQuestion]=useState('');
  const [answer,setAnswer]=useState('');
+ const [conversation,setConversation]=useState<Array<{role:'user'|'assistant';content:string;mode?:string}>>([]);
+ const [useGenerative,setUseGenerative]=useState(false);
+ const [aiBusy,setAiBusy]=useState(false);
+ const [aiNotice,setAiNotice]=useState('');
  const [showMatrix,setShowMatrix]=useState(false);
  const [maxVenues,setMaxVenues]=useState(6);
  const voterNames=[...people,'You (demo)'];
@@ -110,23 +114,94 @@ export default function V2Preview(){
   const snap:Publication={version:publications.length+1,date:new Date().toLocaleString('en-GB'),ids:[...officialIds],rules:{...rule},overrides:structuredClone(overrides),scores:structuredClone(scores)};
   setPublications(p=>[...p,snap]);setDraftNotice('Demo version '+snap.version+' published in this browser only. Supabase was not changed.');
  };
- const ask=(input:string)=>{
-  const q=input.trim();if(!q)return;setQuestion(q);
-  const lower=q.toLowerCase();
-  let response='';
-  if(/who|participant|voted|progress/.test(lower)){
-   response=participation.map(p=>p.name+': '+p.cast+' ratings').join(' · ')+'. There are '+active+' active demo voters.';
-  } else if(/dislike|object|zero|agree|consensus/.test(lower)){
-   const zeros=counted.filter(v=>v.dislikes===0).sort((a,b)=>b.likes-a.likes);
-   response=zeros.length+' venues have no recorded dislikes. Leading: '+zeros.slice(0,6).map(v=>v.name+' ('+v.likes+' likes)').join(', ')+'. Not rated is not the same as approved.';
-  } else if(/trail|route|walk/.test(lower)){
-   response='The proposed demo shortlist has '+officialIds.length+' stops. Open the Trail tab to build walking directions. Venue ordering is not automatically route-optimised.';
-  } else if(/top|best|favourite|popular|like/.test(lower)){
-   response=counted.sort((a,b)=>b.likes-a.likes).slice(0,5).map(v=>v.name+': '+v.likes+' likes, '+v.dislikes+' dislikes').join(' · ')+'.';
-  } else {
-   response='This preview supports questions about voting progress, zero-dislike venues, favourites and the trail. Full natural-language AI will require a server-side AI integration in a later release.';
+ const instantAnswer=(input:string):string=>{
+  const q=input.trim().toLowerCase();
+  const n=q.match(/(?:allow|permit|up to|at most|maximum|with)\s+(one|two|three|four|five|zero|\d+)\s+dislikes?/);
+  const numberWord:Record<string,number>={zero:0,one:1,two:2,three:3,four:4,five:5};
+  const max=n?(numberWord[n[1]]??Number(n[1])):undefined;
+  const venue=counted.find(v=>q.includes(v.name.toLowerCase())||q.includes(v.cocktail?.toLowerCase()||'NO_MATCH_COCKTAIL'));
+  const person=voterNames.find(p=>q.includes(p.toLowerCase()));
+  const format=(v:typeof counted[number])=>v.name+' ('+v.likes+' likes, '+v.dislikes+' dislikes; '+v.rated+' rated)';
+  if(/ingredient|what.s in|made of|contains|recipe/.test(q)&&venue)
+   return venue.cocktail+' at '+venue.name+' contains: '+(venue.cocktailIngredients||[]).join(', ')+'. You can open the cocktail photo from the Vote or Results tab.';
+  if(venue&&/who|which person|voters/.test(q)&&/like|dislike|vot/.test(q)){
+   const yes=voterNames.filter(p=>votes[p]?.[venue.id]===true),no=voterNames.filter(p=>votes[p]?.[venue.id]===false),missing=voterNames.filter(p=>votes[p]?.[venue.id]===undefined);
+   return venue.name+': Liked by '+(yes.join(', ')||'nobody')+'. Disliked by '+(no.join(', ')||'nobody')+'. Not yet rated by '+(missing.join(', ')||'nobody')+'.';
   }
-  setAnswer(response);
+  if(venue&&/vote|like|dislike|rating|score|opinion|think|popular|about/.test(q))
+   return format(venue)+'. Approval among people who rated it: '+(venue.rated?Math.round(100*venue.likes/venue.rated)+'%':'not available')+'. '+(venue.dislikes===0?'No recorded objections, but not every person necessarily voted for it.':'It has recorded objections.') ;
+  if(person&&/vote|like|dislike|prefer|choose|rated|progress|think/.test(q)){
+   const likes=counted.filter(v=>votes[person]?.[v.id]===true),dislikes=counted.filter(v=>votes[person]?.[v.id]===false);
+   return person+' rated '+(likes.length+dislikes.length)+' of 36 venues. Likes ('+likes.length+'): '+(likes.slice(0,12).map(v=>v.name).join(', ')||'none')+(likes.length>12?' and '+(likes.length-12)+' more':'')+'. Dislikes ('+dislikes.length+'): '+(dislikes.slice(0,12).map(v=>v.name).join(', ')||'none')+(dislikes.length>12?' and '+(dislikes.length-12)+' more':'')+'.';
+  }
+  if(/who.*(not|hasn.t|haven.t|yet)|no votes|not started|participat|progress|who voted/.test(q)){
+   const inactive=participation.filter(p=>p.cast===0);
+   return active+' of '+voterNames.length+' demo participants have voted. '+totalVotes+' venue ratings recorded. Not yet started: '+(inactive.map(p=>p.name).join(', ')||'nobody')+'. Ratings by participant: '+participation.map(p=>p.name+' '+p.cast).join(' · ')+'.';
+  }
+  if(/compare|difference|versus| vs /.test(q)){
+   const matches=counted.filter(v=>q.includes(v.name.toLowerCase()));
+   if(matches.length>=2)return 'Comparison: '+matches.map(format).join(' versus ')+'. Note that missing votes are not dislikes.';
+   return 'To compare venues, include two venue names, for example “Compare Sweet Afton and The Northern Whig”.';
+  }
+  if(max!==undefined&&/dislike|objection/.test(q)){
+   const m=q.match(/(?:at least|minimum|require)\s+(one|two|three|four|five|\d+)\s+likes?/);
+   const minimum=m?(numberWord[m[1]]??Number(m[1])):0;
+   const chosen=counted.filter(v=>v.dislikes<=max&&v.likes>=minimum).sort((a,b)=>b.likes-a.likes||a.dislikes-b.dislikes);
+   return 'Allowing up to '+max+' dislikes'+(minimum?', requiring at least '+minimum+' likes':'')+' produces '+chosen.length+' qualifying venues: '+chosen.slice(0,12).map(format).join('; ')+(chosen.length>12?'; and '+(chosen.length-12)+' more':'')+'. This is a personal scenario only; no votes or official selections changed.';
+  }
+  if(/unanimous|everyone agree|zero dislike|no dislike|no objection|consensus/.test(q)){
+   const zeros=counted.filter(v=>v.dislikes===0&&v.likes>0).sort((a,b)=>b.likes-a.likes);
+   return zeros.length+' venues currently have at least one like and no dislikes: '+zeros.slice(0,10).map(format).join('; ')+(zeros.length>10?'; and '+(zeros.length-10)+' more':'')+'. This is no recorded objection, NOT unanimous approval; some participants have not rated them.';
+  }
+  if(/trail|route|walk|itinerary|five.bar|five bar/.test(q)){
+   const stops=officialIds.slice(0,5).map(id=>counted.find(v=>v.id===id)?.name).filter(Boolean);
+   return 'The demo shortlist currently starts with '+stops.join(' → ')+'. Open Trail for walking directions, or Organiser Studio to change the order. These are voting-ranked stops, not an optimised walking route.';
+  }
+  if(/top|best|favourite|popular|most liked|rank|winning|leader/.test(q)){
+   const best=counted.slice().sort((a,b)=>b.likes-a.likes||a.dislikes-b.dislikes).slice(0,8);
+   return 'Most-liked demo venues: '+best.map(format).join('; ')+'. For a no-objection ranking, use the Strict filter in Results.';
+  }
+  if(/approval|percentage|rate/.test(q)){
+   const ranked=counted.filter(v=>v.rated>0).sort((a,b)=>b.likes/b.rated-a.likes/a.rated||b.rated-a.rated).slice(0,7);
+   return 'Highest approval among people who voted: '+ranked.map(v=>v.name+' '+Math.round(100*v.likes/v.rated)+'% ('+v.rated+' ratings)').join('; ')+'. A high percentage from only a few ratings is less conclusive.';
+  }
+  if(/official|publish|shortlist|rule|filter/.test(q)){
+   return 'Your current rules match '+eligible.length+' of 36 venues; '+officialIds.length+' venues are in the proposed shortlist after manual adjustments. The Results filters are personal. Organiser Studio can create a DEMO publication, but cannot modify the real application.';
+  }
+  return 'I can calculate voting progress, individual preferences, who liked or disliked a named venue, cocktail ingredients, venue comparisons, rankings, consensus and what-if scenarios. Try “Who disliked Sweet Afton?”, “What if we allow one dislike?”, or “What is in the Honey Paloma?”. For fully flexible conversation, use the optional AI Gateway mode once it has been configured.';
+ };
+ const ask=async(input:string)=>{
+  const q=input.trim();if(!q||aiBusy)return;
+  setQuestion('');
+  setAiNotice('');
+  const prior=conversation.slice(-6).map(m=>({role:m.role,content:m.content}));
+  setConversation(old=>[...old,{role:'user',content:q}]);
+  if(!useGenerative){
+   const result=instantAnswer(q);
+   setAnswer(result);
+   setConversation(old=>[...old,{role:'assistant',content:result,mode:'instant'}]);
+   return;
+  }
+  setAiBusy(true);
+  try{
+   const response=await fetch('/api/v2/chat',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({question:q,history:prior,
+     venues:counted.map(v=>({name:v.name,cocktail:v.cocktail,likes:v.likes,dislikes:v.dislikes})),
+     members:participation.map(p=>({name:p.name,ratings:p.cast,
+      likes:Object.values(votes[p.name]||{}).filter(Boolean).length,
+      dislikes:Object.values(votes[p.name]||{}).filter(x=>x===false).length})),
+     rules:rule})});
+   const data=await response.json();
+   if(!response.ok)throw new Error(data.error||'AI unavailable');
+   const result=String(data.answer);
+   setAnswer(result);
+   setConversation(old=>[...old,{role:'assistant',content:result,mode:'generative'}]);
+  }catch(e){
+   const result=instantAnswer(q);
+   setAnswer(result);
+   setAiNotice((e as Error).message+' Showing instant analysis instead.');
+   setConversation(old=>[...old,{role:'assistant',content:result,mode:'instant'}]);
+  }finally{setAiBusy(false);}
  };
  const top=counted.slice().sort((a,b)=>b.likes-a.likes).slice(0,5);
  const cocktailLink=(v:Venue)=> <button type="button" className="v2-cocktail-link" onClick={()=>setSelectedCocktail(v)} aria-label={'View photo and ingredients for '+v.cocktail+' at '+v.name}><Martini size={13}/>{v.cocktail||'See cocktail'}</button>;
@@ -192,13 +267,17 @@ export default function V2Preview(){
     {(()=>{const ids=(latest?.ids||officialIds).slice(0,maxVenues);const stops=ids.map(id=>VENUES.find(v=>v.id===id)).filter((v):v is NonNullable<typeof v>=>!!v);if(stops.length<2)return <p className="v2-muted">Choose at least two venues to view directions.</p>;const places=stops.slice(0,5).map(v=>v.address||v.name+', Belfast');const params=new URLSearchParams({api:'1',origin:places[0],destination:places[places.length-1],travelmode:'walking'});if(places.length>2)params.set('waypoints',places.slice(1,-1).join('|'));return <><a className="v2-main-button" href={'https://www.google.com/maps/dir/?'+params.toString()} target="_blank" rel="noreferrer"><MapPin size={17}/> Open walking directions (first {places.length} stops)</a>{stops.length>5&&<p className="v2-muted">More than five stops selected. Open further route sections separately when implemented.</p>}</>;})()}
    </div>
   </section>}
-  {tab==='ai'&&<section className="v2-content"><span className="v2-kicker">AI ASSISTANT · CONCEPT PREVIEW</span><h1 className="v2-page-title">Ask Cocktail Club</h1>
-   <div className="v2-panel"><h3><Sparkles size={18}/> Ask about the group</h3><p className="v2-muted">This demo uses deterministic answers from the test votes. It is NOT a connected generative AI service, and makes no external AI requests.</p>
-    {['Who has voted so far?','Which venues have zero dislikes?','What are our top five venues?','Plan a cocktail trail'].map(q=><button className="v2-ai-suggestion" key={q} onClick={()=>ask(q)}><MessageCircle size={16}/>{q}<ChevronRight size={15}/></button>)}
-    <form onSubmit={e=>{e.preventDefault();ask(question)}} className="v2-ask-form"><input className="v2-input" value={question} onChange={e=>setQuestion(e.target.value)} placeholder="Ask about votes, favourites, trails..."/><button type="submit" className="v2-main-button">Ask <Sparkles size={16}/></button></form>
-    {answer&&<div className="v2-answer"><strong>Voting insights</strong><p>{answer}</p></div>}
+  {tab==='ai'&&<section className="v2-content"><span className="v2-kicker">GROUP ANALYSIS · DEMO DATA</span><h1 className="v2-page-title">Ask Cocktail Club</h1>
+   <div className="v2-panel"><h3><Sparkles size={18}/> Your voting assistant</h3>
+    <p className="v2-muted">Ask follow-up questions about votes, objections, cocktails and alternative shortlists. Answers below use fictional demo participants and votes, not the live group.</p>
+    <label className="v2-ai-mode"><input type="checkbox" checked={useGenerative} onChange={e=>setUseGenerative(e.target.checked)}/> Try generative AI when available <small>Requires preview AI Gateway configuration. Instant analysis always works.</small></label>
+    <div className="v2-ai-chips">{['Who has not voted yet?','Who disliked Sweet Afton?','What if we allow one dislike?','Compare Sweet Afton and The Northern Whig','What is in the Honey Paloma?','Which venues have zero dislikes?'].map(q=><button className="v2-ai-suggestion" key={q} disabled={aiBusy} onClick={()=>{void ask(q)}}><MessageCircle size={16}/>{q}<ChevronRight size={15}/></button>)}</div>
+    <div className="v2-chat-log" aria-live="polite">{conversation.length===0?<p className="v2-muted">Choose a suggestion or ask your own question to begin.</p>:conversation.map((m,i)=><div key={i} className={'v2-chat-bubble '+(m.role==='user'?'user':'assistant')}><small>{m.role==='user'?'You':m.mode==='generative'?'AI assistant':'Instant voting insights'}</small><p>{m.content}</p></div>)}</div>
+    {aiNotice&&<p role="status" className="v2-muted">{aiNotice}</p>}
+    <form onSubmit={e=>{e.preventDefault();void ask(question)}} className="v2-ask-form"><input className="v2-input" maxLength={900} value={question} onChange={e=>setQuestion(e.target.value)} placeholder="Ask about votes, bars or cocktails..." aria-label="Ask the voting assistant"/><button type="submit" disabled={aiBusy||!question.trim()} className="v2-main-button">{aiBusy?'Analysing…':'Ask'} <Sparkles size={16}/></button></form>
+    {conversation.length>0&&<button className="v2-outline" onClick={()=>{setConversation([]);setAnswer('');setAiNotice('')}}>Clear conversation</button>}
    </div>
-   <p className="v2-muted">A real AI assistant in v2.2 will use a secured server-side model integration and the same rules engine as the dashboard.</p>
+   <p className="v2-muted">Instant calculations come from demo votes in your browser. Generative responses, when enabled, are produced server-side using the supplied snapshot. Neither mode can edit votes or publish to the live app.</p>
   </section>}
   <nav className="v2-nav" aria-label="Main navigation">{nav.map(([id,label,Icon])=><button type="button" key={id} className={tab===id?'active':''} onClick={()=>showTab(id)}><Icon size={20}/><span>{label}</span></button>)}</nav>
   {selectedCocktail&&<CocktailDetails venue={selectedCocktail} onClose={()=>setSelectedCocktail(null)}/>}
