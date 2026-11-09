@@ -3,6 +3,7 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {ArrowDown,ArrowUp,BarChart3,Check,ChevronRight,Heart,LockKeyhole,MapPin,Martini,MessageCircle,RefreshCcw,Route,Send,ShieldCheck,SlidersHorizontal,Sparkles,ThumbsDown,ThumbsUp,Users,Vote,X} from 'lucide-react';
 import {COCKTAIL_GUIDE_URL,VENUES,mapSearch,Venue} from '../../lib/venues';
+import {EMPTY_TASTE_PROFILE,SPIRIT_OPTIONS,FLAVOUR_OPTIONS,TasteProfile} from '../../lib/taste-profile';
 import './v2.css';
 
 type VoteValue = boolean | undefined;
@@ -91,6 +92,12 @@ export default function V2Preview(){
  const [conversation,setConversation]=useState<Array<{role:'user'|'assistant';content:string;mode?:string}>>([]);
  const [aiBusy,setAiBusy]=useState(false);
  const [aiNotice,setAiNotice]=useState('');
+ const [tasteProfile,setTasteProfile]=useState<TasteProfile>({...EMPTY_TASTE_PROFILE});
+ const [tasteIngredients,setTasteIngredients]=useState('');
+ const [tasteBusy,setTasteBusy]=useState(false);
+ const [tasteReady,setTasteReady]=useState(false);
+ const [tasteNotice,setTasteNotice]=useState('');
+ const [tasteError,setTasteError]=useState('');
  const [showMatrix,setShowMatrix]=useState(false);
  const [maxVenues,setMaxVenues]=useState(6);
  const [planStops,setPlanStops]=useState(5);
@@ -125,6 +132,45 @@ export default function V2Preview(){
   const timer=setInterval(()=>{refreshLive(token).catch(e=>setLoadError((e as Error).message))},10000);
   return()=>clearInterval(timer);
  },[token,connected]);
+ useEffect(()=>{
+  if(!LIVE||!connected||!token)return;
+  let canceled=false;
+  setTasteReady(false);
+  fetch('/api/v2/taste',{headers:{'x-member-token':token},cache:'no-store'})
+   .then(async response=>{const data=await response.json();if(!response.ok)throw new Error(data.error||'Unable to load taste preferences');return data})
+   .then(data=>{
+    if(canceled)return;
+    const profile=data.profile as TasteProfile;
+    setTasteProfile(profile);
+    setTasteIngredients(profile.avoidedIngredients.join(', '));
+    setTasteReady(true);setTasteError('');
+   })
+   .catch(e=>{if(!canceled){setTasteError((e as Error).message);setTasteReady(false)}});
+  return()=>{canceled=true};
+ },[token,connected]);
+ const toggleTaste=(field:'likedSpirits'|'avoidedSpirits'|'likedFlavours',value:string)=>{
+  setTasteNotice('');setTasteError('');
+  setTasteProfile(previous=>{
+   const values=previous[field].includes(value)?previous[field].filter(v=>v!==value):[...previous[field],value];
+   const update={...previous,[field]:values};
+   if(field==='likedSpirits')update.avoidedSpirits=update.avoidedSpirits.filter(v=>v!==value);
+   if(field==='avoidedSpirits')update.likedSpirits=update.likedSpirits.filter(v=>v!==value);
+   return update;
+  });
+ };
+ const saveTaste=async()=>{
+  if(!token||tasteBusy||READONLY)return;
+  setTasteBusy(true);setTasteNotice('');setTasteError('');
+  try{
+   const input={...tasteProfile,avoidedIngredients:tasteIngredients.split(',').map(x=>x.trim()).filter(Boolean)};
+   const response=await fetch('/api/v2/taste',{method:'PUT',headers:{'Content-Type':'application/json','x-member-token':token},
+    body:JSON.stringify(input)});
+   const data=await response.json();
+   if(!response.ok)throw new Error(data.error||'Could not save preferences');
+   setTasteProfile(data.profile);setTasteIngredients(data.profile.avoidedIngredients.join(', '));
+   setTasteNotice('Preferences saved. AI will use them for your next recommendation.');
+  }catch(e){setTasteError((e as Error).message)}finally{setTasteBusy(false)}
+ };
  const joinGroup=async()=>{
   if(!invite||(!READONLY&&!joiningName.trim())||joining)return;
   setJoining(true);setLoadError('');
@@ -476,11 +522,31 @@ export default function V2Preview(){
     {(()=>{const ids=(officialTrailIds||latest?.ids||officialIds).slice(0,maxVenues);const stops=ids.map(id=>VENUES.find(v=>v.id===id)).filter((v):v is NonNullable<typeof v>=>!!v);if(stops.length<2)return <p className="v2-muted">Choose at least two venues to view directions.</p>;const places=stops.slice(0,5).map(v=>v.address||v.name+', Belfast');const params=new URLSearchParams({api:'1',origin:places[0],destination:places[places.length-1],travelmode:'walking'});if(places.length>2)params.set('waypoints',places.slice(1,-1).join('|'));return <><a className="v2-main-button" href={'https://www.google.com/maps/dir/?'+params.toString()} target="_blank" rel="noreferrer"><MapPin size={17}/> Open walking directions (first {places.length} stops)</a>{stops.length>5&&<p className="v2-muted">More than five stops selected. Open further route sections separately when implemented.</p>}</>;})()}
    </div>
   </section>}
-  {tab==='ai'&&<section className="v2-content"><span className="v2-kicker">GROUP ANALYSIS · {LIVE?'LIVE VOTES':'DEMO DATA'}</span><h1 className="v2-page-title">Ask Cocktail Club</h1>
+  {tab==='ai'&&<section className="v2-content"><span className="v2-kicker">PERSONALISED COCKTAIL AI · {LIVE?'LIVE VOTES':'DEMO DATA'}</span><h1 className="v2-page-title">Ask Cocktail Club</h1>
+   {LIVE&&!READONLY&&<details className="v2-panel v2-taste-panel">
+    <summary><Sparkles size={17}/> My cocktail tastes <span>Personalise AI recommendations</span></summary>
+    <p className="v2-muted">Choose what you enjoy and what you'd rather avoid. These choices are private to your member account and don't change your votes.</p>
+    <div className="v2-taste-group"><strong>Spirits I enjoy</strong>
+     <div className="v2-taste-chips">{SPIRIT_OPTIONS.map(spirit=><button key={spirit} type="button" className={tasteProfile.likedSpirits.includes(spirit)?'active':''} aria-pressed={tasteProfile.likedSpirits.includes(spirit)} onClick={()=>toggleTaste('likedSpirits',spirit)}>{spirit}</button>)}</div>
+    </div>
+    <div className="v2-taste-group"><strong>Spirits I'd rather avoid</strong>
+     <div className="v2-taste-chips">{SPIRIT_OPTIONS.map(spirit=><button key={spirit} type="button" className={tasteProfile.avoidedSpirits.includes(spirit)?'active':''} aria-pressed={tasteProfile.avoidedSpirits.includes(spirit)} onClick={()=>toggleTaste('avoidedSpirits',spirit)}>{spirit}</button>)}</div>
+    </div>
+    <div className="v2-taste-group"><strong>Flavours I like</strong>
+     <div className="v2-taste-chips">{FLAVOUR_OPTIONS.map(flavour=><button key={flavour} type="button" className={tasteProfile.likedFlavours.includes(flavour)?'active':''} aria-pressed={tasteProfile.likedFlavours.includes(flavour)} onClick={()=>toggleTaste('likedFlavours',flavour)}>{flavour}</button>)}</div>
+    </div>
+    <label className="v2-select-label">Ingredients I'd rather avoid
+     <input className="v2-input" value={tasteIngredients} maxLength={500} onChange={e=>{setTasteIngredients(e.target.value);setTasteNotice('')}} placeholder="e.g. coconut, cream, egg white (comma-separated)"/>
+    </label>
+    <p className="v2-muted">For preferences only. Event ingredient lists can be incomplete; always confirm allergens with the venue.</p>
+    {tasteError&&<p className="v2-error" role="alert">{tasteError}</p>}
+    {tasteNotice&&<p className="v2-success" role="status">{tasteNotice}</p>}
+    <button type="button" className="v2-main-button" disabled={!tasteReady||tasteBusy} onClick={()=>{void saveTaste()}}>{tasteBusy?'Saving…':tasteReady?'Save my tastes':'Loading preferences…'}</button>
+   </details>}
    <div className="v2-panel"><h3><Sparkles size={18}/> Your voting assistant</h3>
     <p className="v2-muted">Ask about all 36 cocktails and their listed ingredients, your group's votes, food options, recommendations and alternative trails. {LIVE?'Answers use the group voting records. The assistant reads live votes but cannot edit them or publish a trail.':'Answers use fictional demo participants and votes, not the live group.'}</p>
     <p className="v2-muted">Ask naturally — your AI assistant is ready. If the AI service is temporarily unavailable, instant voting insights will answer instead.</p>
-    <div className="v2-ai-chips">{['Which cocktails contain rum?','Which cocktails are fruity and sweet?','Which drinks have cream or dairy listed?','Recommend cocktails without gin based on the ingredients','Which cocktails contain tequila?','Find cocktails with pineapple and compare their group votes','Recommend our best five bars and explain why','Who hasn’t voted yet?'].map(q=><button className="v2-ai-suggestion" key={q} disabled={aiBusy} onClick={()=>{void ask(q)}}><MessageCircle size={16}/>{q}<ChevronRight size={15}/></button>)}</div>
+    <div className="v2-ai-chips">{['Recommend the best cocktails for my saved tastes','Which cocktails contain rum?','Which cocktails are fruity and sweet?','Which drinks have cream or dairy listed?','Recommend cocktails without gin based on the ingredients','Which cocktails contain tequila?','Find cocktails with pineapple and compare their group votes','Recommend our best five bars and explain why','Who hasn’t voted yet?'].map(q=><button className="v2-ai-suggestion" key={q} disabled={aiBusy} onClick={()=>{void ask(q)}}><MessageCircle size={16}/>{q}<ChevronRight size={15}/></button>)}</div>
     <div className="v2-chat-log" aria-live="polite">{conversation.length===0?<p className="v2-muted">Choose a suggestion or ask your own question to begin.</p>:conversation.map((m,i)=><div key={i} className={'v2-chat-bubble '+(m.role==='user'?'user':'assistant')}><small>{m.role==='user'?'You':m.mode==='generative'?'AI assistant':'Instant voting insights'}</small><p>{m.content}</p></div>)}</div>
     {aiNotice&&<p role="status" className="v2-muted">{aiNotice}</p>}
     <form onSubmit={e=>{e.preventDefault();void ask(question)}} className="v2-ask-form"><input className="v2-input" maxLength={900} value={question} onChange={e=>setQuestion(e.target.value)} placeholder="Ask about votes, bars or cocktails..." aria-label="Ask the voting assistant"/><button type="submit" disabled={aiBusy||!question.trim()} className="v2-main-button">{aiBusy?'Analysing…':'Ask'} <Sparkles size={16}/></button></form>
