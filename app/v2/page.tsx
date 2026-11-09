@@ -4,7 +4,7 @@ import {useEffect,useMemo,useRef,useState} from 'react';
 import {ArrowDown,ArrowUp,BarChart3,Check,ChevronRight,Heart,LockKeyhole,MapPin,Martini,MessageCircle,RefreshCcw,Route,Send,ShieldCheck,SlidersHorizontal,Sparkles,ThumbsDown,ThumbsUp,Users,Vote,X} from 'lucide-react';
 import {COCKTAIL_GUIDE_URL,VENUES,mapSearch,Venue} from '../../lib/venues';
 import {EMPTY_TASTE_PROFILE,SPIRIT_OPTIONS,FLAVOUR_OPTIONS,TasteProfile} from '../../lib/taste-profile';
-import {VENUE_POINTS,straightLineMetres,cocktailTaste} from '../../lib/venue-coordinates';
+import {VENUE_POINTS,straightLineMetres,cocktailTaste,resolveVenuePostcodePoints,VenuePoint} from '../../lib/venue-coordinates';
 import './v2.css';
 
 type VoteValue = boolean | undefined;
@@ -109,6 +109,9 @@ export default function V2Preview(){
  const [planError,setPlanError]=useState('');
  const [planDraft,setPlanDraft]=useState<PlannerResult|null>(null);
  const [myLocation,setMyLocation]=useState<{lat:number;lng:number;accuracy:number}|null>(null);
+ const [postcodePoints,setPostcodePoints]=useState<Record<string,VenuePoint>>({});
+ const [postcodesLoading,setPostcodesLoading]=useState(false);
+ const [postcodesError,setPostcodesError]=useState('');
  const [locating,setLocating]=useState(false);
  const [locationError,setLocationError]=useState('');
  const [nearbyPriority,setNearbyPriority]=useState<'balanced'|'closest'>('balanced');
@@ -214,7 +217,7 @@ export default function V2Preview(){
  const closestCandidates=useMemo(()=>{
   if(!myLocation)return [];
   const all=VENUES.flatMap(v=>{
-   const point=VENUE_POINTS[v.id];
+   const point=VENUE_POINTS[v.id]||postcodePoints[v.id];
    if(!point)return [];
    const distance=straightLineMetres(myLocation.lat,myLocation.lng,point.lat,point.lng);
    const taste=cocktailTaste(v,tasteProfile);
@@ -231,7 +234,7 @@ export default function V2Preview(){
     .sort((a,b)=>nearbyPriority==='closest'?
      a.distance-b.distance:
      b.score-a.score||a.distance-b.distance).slice(0,5);
- },[myLocation,nearbyPriority,votes,tasteProfile]);
+ },[myLocation,nearbyPriority,votes,tasteProfile,postcodePoints]);
  const findMyCocktail=()=>{
   setLocationError('');
   if(typeof navigator==='undefined'||!navigator.geolocation){
@@ -247,6 +250,21 @@ export default function V2Preview(){
     }else{
      setMyLocation({lat:latitude,lng:longitude,accuracy});
      setLocationError('');
+     // Only public venue postcodes are sent for lookup; GPS stays on-device.
+     if(Object.keys(postcodePoints).length===0){
+      setPostcodesLoading(true);setPostcodesError('');
+      resolveVenuePostcodePoints(VENUES)
+       .then(points=>{
+        setPostcodePoints(points);
+        if(Object.keys(points).length<27){
+         setPostcodesError('Some venue postcodes could not be mapped; the others are still available.');
+        }
+       })
+       .catch(()=>{
+        setPostcodesError('The postcode location service is unavailable. Showing the nine mapped venues; try updating your location again.');
+       })
+       .finally(()=>setPostcodesLoading(false));
+     }
     }
     setLocating(false);
    },
@@ -555,7 +573,8 @@ export default function V2Preview(){
        <option value="closest">Closest venues first</option>
       </select>
      </label>
-     <p className="v2-muted">Showing the best matches among {Object.keys(VENUE_POINTS).length} mapped participating venues. Other bars remain available elsewhere in the app. Distances below are straight-line approximations, not walking distances.</p>
+     <p className="v2-muted">Showing the best matches among {Object.keys(VENUE_POINTS).length+Object.keys(postcodePoints).length} mapped participating venues. {postcodesLoading?'Looking up the remaining venue postcodes… ':' '}Distances are approximate straight-line distances, not walking distances. Postcode-based points may be offset from the venue entrance.</p>
+     {postcodesError&&<p className="v2-muted" role="status">{postcodesError}</p>}
      {myLocation.accuracy>150&&<p className="v2-muted">Your phone reports low location accuracy. Nearby rankings may change when you refresh outdoors.</p>}
      {closestCandidates.length===0&&<p className="v2-muted">No mapped venues match your saved ingredient avoidance preferences. Update your tastes under AI, or use the standard Trail tab.</p>}
      {closestCandidates.map((entry,index)=><div className="v2-geo-result" key={entry.venue.id}>
