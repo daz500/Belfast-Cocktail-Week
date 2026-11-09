@@ -4,6 +4,7 @@ import {useEffect,useMemo,useRef,useState} from 'react';
 import {ArrowDown,ArrowUp,BarChart3,Check,ChevronRight,Heart,LockKeyhole,MapPin,Martini,MessageCircle,RefreshCcw,Route,Send,ShieldCheck,SlidersHorizontal,Sparkles,ThumbsDown,ThumbsUp,Users,Vote,X} from 'lucide-react';
 import {COCKTAIL_GUIDE_URL,VENUES,mapSearch,Venue} from '../../lib/venues';
 import {EMPTY_TASTE_PROFILE,SPIRIT_OPTIONS,FLAVOUR_OPTIONS,TasteProfile} from '../../lib/taste-profile';
+import {VENUE_POINTS,straightLineMetres,cocktailTaste} from '../../lib/venue-coordinates';
 import './v2.css';
 
 type VoteValue = boolean | undefined;
@@ -107,6 +108,10 @@ export default function V2Preview(){
  const [planBusy,setPlanBusy]=useState(false);
  const [planError,setPlanError]=useState('');
  const [planDraft,setPlanDraft]=useState<PlannerResult|null>(null);
+ const [myLocation,setMyLocation]=useState<{lat:number;lng:number;accuracy:number}|null>(null);
+ const [locating,setLocating]=useState(false);
+ const [locationError,setLocationError]=useState('');
+ const [nearbyPriority,setNearbyPriority]=useState<'balanced'|'closest'>('balanced');
  const voterNames=LIVE?peopleLive.map(p=>p.key):[...people,'You (demo)'];
  const currentVoter=LIVE?meKey:'You (demo)';
  const friendlyName=(key:string)=>LIVE?(peopleLive.find(p=>p.key===key)?.name||key):key;
@@ -206,6 +211,64 @@ export default function V2Preview(){
   return [...new Set([...filtered,...remainder,...extra])];
  // eslint-disable-next-line react-hooks/exhaustive-deps
  },[order,overrides,rule,votes]);
+ const closestCandidates=useMemo(()=>{
+  if(!myLocation)return [];
+  const all=VENUES.flatMap(v=>{
+   const point=VENUE_POINTS[v.id];
+   if(!point)return [];
+   const distance=straightLineMetres(myLocation.lat,myLocation.lng,point.lat,point.lng);
+   const taste=cocktailTaste(v,tasteProfile);
+   // These are straight-line distances, never claimed to be walking lengths.
+   const votesForVenue=scores[v.id]||{likes:0,dislikes:0};
+   const distanceWeight=nearbyPriority==='closest'?12:5;
+   const score=distanceWeight*Math.exp(-distance/550)+
+     votesForVenue.likes*(nearbyPriority==='closest'?0.45:1.3)-
+     votesForVenue.dislikes*(nearbyPriority==='closest'?0.5:1.5)+
+     taste.score;
+   return [{venue:v,point,distance,taste,votes:votesForVenue,score}];
+  });
+  return all.filter(item=>item.taste.avoidHits.length===0)
+    .sort((a,b)=>nearbyPriority==='closest'?
+     a.distance-b.distance:
+     b.score-a.score||a.distance-b.distance).slice(0,5);
+ },[myLocation,nearbyPriority,votes,tasteProfile]);
+ const findMyCocktail=()=>{
+  setLocationError('');
+  if(typeof navigator==='undefined'||!navigator.geolocation){
+   setLocationError('Location services are unavailable in this browser. Use the map links or try Safari on your phone.');
+   return;
+  }
+  setLocating(true);
+  navigator.geolocation.getCurrentPosition(
+   position=>{
+    const {latitude,longitude,accuracy}=position.coords;
+    if(!Number.isFinite(latitude)||!Number.isFinite(longitude)||!Number.isFinite(accuracy)){
+     setLocationError('Unable to read a valid GPS position. Please try again.');
+    }else{
+     setMyLocation({lat:latitude,lng:longitude,accuracy});
+     setLocationError('');
+    }
+    setLocating(false);
+   },
+   error=>{
+    const message=error.code===1?'Location permission was denied. Enable Location Services for this website in your browser settings.':
+     error.code===2?'Your phone could not determine its position. Try moving outdoors or enabling Location Services.':
+     'Location request timed out. Please try again.';
+    setLocationError(message);setLocating(false);
+   },
+   {enableHighAccuracy:true,maximumAge:0,timeout:16000}
+  );
+ };
+ const directionsFromHere=(venue:Venue)=>{
+  if(!myLocation)return mapSearch(venue);
+  const origin=myLocation.lat.toFixed(6)+','+myLocation.lng.toFixed(6);
+  const params=new URLSearchParams({
+   api:'1',origin,
+   destination:venue.address||venue.name+', Belfast',
+   travelmode:'walking'
+  });
+  return 'https://www.google.com/maps/dir/?'+params.toString();
+ };
  const latest=publications[publications.length-1];
  const setPresetRule=(name:string)=>{setPreset(name);setRule({...presetRules[name]});setOrder([]);setOverrides({});setDraftNotice('')};
  const changeRule=(patch:Partial<Rule>)=>{setPreset('custom');setRule(v=>({...v,...patch}));setDraftNotice('')};
@@ -478,6 +541,35 @@ export default function V2Preview(){
    {publications.length>1&&<p className="v2-muted">Demo publication history: {publications.map(p=>'v'+p.version).join(' → ')}</p>}
   </section>}
   {tab==='trail'&&<section className="v2-content"><span className="v2-kicker">GROUP ITINERARY</span><h1 className="v2-page-title">Our cocktail trail</h1>
+   <div className="v2-panel v2-geo-panel">
+    <h3><MapPin size={18}/> Find my next cocktail</h3>
+    <p className="v2-muted">Use your phone's location to discover nearby participating venues, balancing proximity, live group votes and your saved cocktail tastes.</p>
+    <p className="v2-muted">Your GPS coordinates stay on this phone, in this page only. Nothing is saved to the group database or sent to AI. Google Maps receives your location only if you tap walking directions.</p>
+    <button type="button" className="v2-main-button" disabled={locating} onClick={findMyCocktail}><MapPin size={17}/>{locating?'Finding your position…':myLocation?'Update my location':'Use my location'}</button>
+    {locationError&&<p className="v2-error" role="alert">{locationError}</p>}
+    {myLocation&&<>
+     <div className="v2-geo-status"><Check size={16}/> Location found <span>GPS accuracy ±{Math.round(myLocation.accuracy)} m</span></div>
+     <label className="v2-select-label">Show me
+      <select value={nearbyPriority} onChange={e=>setNearbyPriority(e.target.value as 'balanced'|'closest')}>
+       <option value="balanced">Best match: votes, tastes and proximity</option>
+       <option value="closest">Closest venues first</option>
+      </select>
+     </label>
+     <p className="v2-muted">Showing the best matches among {Object.keys(VENUE_POINTS).length} mapped participating venues. Other bars remain available elsewhere in the app. Distances below are straight-line approximations, not walking distances.</p>
+     {myLocation.accuracy>150&&<p className="v2-muted">Your phone reports low location accuracy. Nearby rankings may change when you refresh outdoors.</p>}
+     {closestCandidates.length===0&&<p className="v2-muted">No mapped venues match your saved ingredient avoidance preferences. Update your tastes under AI, or use the standard Trail tab.</p>}
+     {closestCandidates.map((entry,index)=><div className="v2-geo-result" key={entry.venue.id}>
+       <div className="v2-geo-result-head"><span className="v2-rank">{index+1}</span><div><strong>{entry.venue.name}</strong><small>{entry.venue.cocktail}</small></div><span className="v2-geo-distance">{entry.distance<1000?Math.round(entry.distance)+' m':(entry.distance/1000).toFixed(1)+' km'}</span></div>
+       <p className="v2-muted">{entry.votes.likes} likes · {entry.votes.dislikes} dislikes{entry.taste.matches.length?' · Matches '+entry.taste.matches.slice(0,3).join(', '):''}</p>
+       {entry.point.precision==='nearby'&&<p className="v2-muted">Uses an approximate street/building point</p>}
+       <div className="v2-geo-actions">
+        <button type="button" className="v2-outline" onClick={()=>setSelectedCocktail(entry.venue)}><Martini size={15}/> Cocktail details</button>
+        <a className="v2-outline" href={directionsFromHere(entry.venue)} target="_blank" rel="noopener noreferrer"><MapPin size={15}/> Walk there</a>
+       </div>
+      </div>)}
+     <button type="button" className="v2-outline" onClick={()=>{setMyLocation(null);setLocationError('')}}>Forget my location</button>
+    </>}
+   </div>
    {LIVE&&<div className="v2-panel">
     <h3><Sparkles size={18}/> AI-assisted route planner</h3>
     <p className="v2-muted">Build a new private proposal from real group votes, with neighbourhood grouping and a possible food stop. Nothing is published automatically.</p>
