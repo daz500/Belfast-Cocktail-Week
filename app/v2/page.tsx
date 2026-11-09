@@ -246,18 +246,18 @@ export default function V2Preview(){
   }
   if(/trail|route|walk|itinerary|five.bar|five bar/.test(q)){
    const stops=officialIds.slice(0,5).map(id=>counted.find(v=>v.id===id)?.name).filter(Boolean);
-   return '(LIVE?'The proposed shortlist currently starts with ':'The demo shortlist currently starts with ')+stops.join(' → ')+'. Open Trail for walking directions, or Organiser Studio to change the order. These are voting-ranked stops, not an optimised walking route.';
+   return (LIVE?'The proposed shortlist currently starts with ':'The demo shortlist currently starts with ')+stops.join(' → ')+'. Open Trail for walking directions, or Organiser Studio to change the order. These are voting-ranked stops, not an optimised walking route.';
   }
   if(/top|best|favourite|popular|most liked|rank|winning|leader/.test(q)){
    const best=counted.slice().sort((a,b)=>b.likes-a.likes||a.dislikes-b.dislikes).slice(0,8);
-   return '(LIVE?'Most-liked group venues: ':'Most-liked demo venues: ')+best.map(format).join('; ')+'. For a no-objection ranking, use the Strict filter in Results.';
+   return (LIVE?'Most-liked group venues: ':'Most-liked demo venues: ')+best.map(format).join('; ')+'. For a no-objection ranking, use the Strict filter in Results.';
   }
   if(/approval|percentage|rate/.test(q)){
    const ranked=counted.filter(v=>v.rated>0).sort((a,b)=>b.likes/b.rated-a.likes/a.rated||b.rated-a.rated).slice(0,7);
    return 'Highest approval among people who voted: '+ranked.map(v=>v.name+' '+Math.round(100*v.likes/v.rated)+'% ('+v.rated+' ratings)').join('; ')+'. A high percentage from only a few ratings is less conclusive.';
   }
   if(/official|publish|shortlist|rule|filter/.test(q)){
-   return 'Your current rules match '+eligible.length+' of 36 venues; '+officialIds.length+' venues are in the proposed shortlist after manual adjustments. The Results filters are personal. '+(LIVE?'Only the organiser can publish changes from Organiser Studio.':'Organiser Studio creates a demo publication only.')';
+   return 'Your current rules match '+eligible.length+' of 36 venues; '+officialIds.length+' venues are in the proposed shortlist after manual adjustments. The Results filters are personal. '+(LIVE?'Only the organiser can publish changes from Organiser Studio.':'Organiser Studio creates a demo publication only.');
   }
   return 'I can calculate voting progress, individual preferences, who liked or disliked a named venue, cocktail ingredients, venue comparisons, rankings, consensus and what-if scenarios. Try “Who disliked Sweet Afton?”, “What if we allow one dislike?”, or “What is in the Honey Paloma?”. The AI assistant may answer more detailed questions when available.';
  };
