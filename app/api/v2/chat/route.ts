@@ -1,6 +1,7 @@
 import {NextRequest} from 'next/server';
 import {db,GROUP_ID,memberFromRequest} from '../../../../lib/server';
 import {VENUES} from '../../../../lib/venues';
+import {hasPreviewAccess} from '../../../../lib/preview-access';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -31,7 +32,7 @@ export async function POST(req:NextRequest){
   return Response.json({error:'Demo AI is restricted to preview deployments.'},{status:403});
  }
  const member=live?await memberFromRequest(req):null;
- if(live&&!member)return Response.json({error:'Sign in to the group before using AI.'},{status:401});
+ if(live&&!member&&!hasPreviewAccess(req))return Response.json({error:'Sign in to the group before using AI.'},{status:401});
  if(tooManyRequests((req.headers.get('x-forwarded-for')||'unknown').split(',')[0].trim())){
   return Response.json({error:'AI request limit reached for this browser network (30 requests/hour). Instant insights are still available.'},{status:429});
  }
